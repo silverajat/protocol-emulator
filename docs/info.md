@@ -1,20 +1,13 @@
-<!---
-
-This file is used to generate your project datasheet. Please fill in the information below and delete any unused
-sections.
-
-You can also include images in this folder and reference them in the markdown. Each image must be less than
-512 kb in size, and the combined size of all images must be less than 1 MB.
--->
-
 ## How it works
 
-Explain how your project works
+This is a protocol emulator: a small chip that will run wire protocols (UART, SPI, I2C, CAN and others) as software on timing engines, so that new protocols can be added after fabrication.
+
+**Current stage (Gate 0):** a fixed UART transmitter. Right after reset it sends `hello from the chip\r\n` on `uo_out[2]` at 115200 baud (8N1), then repeats every 0.5 s. All other outputs are low and all bidirectional pins are inputs.
 
 ## How to test
 
-Explain how to use your project
+Clock the chip at 60 MHz and release reset. Connect a 3.3 V UART receiver (115200 baud, 8N1) to `uo_out[2]`. The text `hello from the chip` appears twice a second.
 
 ## External hardware
 
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+A USB-UART adapter, or any 3.3 V microcontroller with a UART.

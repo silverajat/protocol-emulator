@@ -1,0 +1,45 @@
+// Pin constraints for ledctl v1 (GW2AR-LV18QN88C8/I7). Pin numbers checked against led-sync/source/ledctl.kicad_pcb.
+IO_LOC "clk27" 4;
+IO_PORT "clk27" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
+// ESP32 UART (same pins as led-sync's ledctl_v1.cst)
+IO_LOC "esp_tx" 70;
+IO_PORT "esp_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "esp_rx" 69;
+IO_PORT "esp_rx" IO_TYPE=LVCMOS33 DRIVE=8;
+
+// J3 expansion header: header pin 3..10 = j3[0..7] = EXP_IO48, 49, 51, 52, 53, 54, 55, 56. Header pin 1 = 3V3.
+IO_LOC "j3[0]" 48;
+IO_LOC "j3[1]" 49;
+IO_LOC "j3[2]" 51;
+IO_LOC "j3[3]" 52;
+IO_LOC "j3[4]" 53;
+IO_LOC "j3[5]" 54;
+IO_LOC "j3[6]" 55;
+IO_LOC "j3[7]" 56;
+IO_PORT "j3[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "j3[1]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "j3[2]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "j3[3]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "j3[4]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "j3[5]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "j3[6]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_PORT "j3[7]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+
+// Board LEDs (active low)
+IO_LOC "led0_n" 74;
+IO_PORT "led0_n" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "led1_n" 75;
+IO_PORT "led1_n" IO_TYPE=LVCMOS33 DRIVE=8;
+
+// RGB strip MOSFET gates and microphone clocks, held off
+IO_LOC "pwm_r" 71;
+IO_PORT "pwm_r" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "pwm_g" 72;
+IO_PORT "pwm_g" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "pwm_b" 73;
+IO_PORT "pwm_b" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "i2s_sck" 82;
+IO_PORT "i2s_sck" IO_TYPE=LVCMOS33 DRIVE=8;
+IO_LOC "i2s_ws" 81;
+IO_PORT "i2s_ws" IO_TYPE=LVCMOS33 DRIVE=8;
