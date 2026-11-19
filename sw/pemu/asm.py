@@ -20,7 +20,7 @@ Instructions:
     pull [ifempty] [block|noblock]
     mov  pins|x|y|pindirs|pc|isr|osr, [~|!|::]src
     set  pins|x|y|pindirs|crc, value
-    nop | crctap off|out|in|both | stuff on|off | evset n | evclr n
+    nop | crctap off|out|in|both | stuff off|out|in|both | evset n | evclr n
 
 Jump targets are absolute addresses in the shared program memory, so a program is
 assembled for the origin it will be loaded at (Program.origin).
@@ -37,6 +37,7 @@ MOV_DST = {'pins': 0, 'x': 1, 'y': 2, 'pindirs': 3, 'pc': 5, 'isr': 6, 'osr': 7}
 SET_DST = {'pins': 0, 'x': 1, 'y': 2, 'pindirs': 3, 'crc': 4}
 WAIT_SRC = {'gpio': 0, 'pin': 1, 'event': 2, 'irq': 2}
 TAP = {'off': 0, 'out': 1, 'in': 2, 'both': 3}
+STUFF = {'off': 0, 'out': 1, 'in': 2, 'both': 3, 'on': 3}
 
 
 class AsmError(Exception):
@@ -57,11 +58,11 @@ class Program:
         return len(self.words)
 
     def listing(self):
-        return '\n'.join(f'{a:02d}  {w:05x}  {t}' for (a, t), w in zip(self.source, self.words))
+        return '\n'.join(f'{a:02d}  {w:04x}  {t}' for (a, t), w in zip(self.source, self.words))
 
 
 def enc(op, delay, pace, args):
-    return (op << 15) | (delay << 10) | (pace << 9) | (args & 0x1FF)
+    return (op << 13) | (delay << 10) | (pace << 9) | (args & 0x1FF)
 
 
 def _strip(line):
@@ -146,7 +147,7 @@ def assemble(text, origin=0, defines=None, name=None):
         delay = 0
         m = re.search(r'\[([^\]]+)\]\s*$', line)
         if m:
-            delay = value(m.group(1), ln, 0, 31)
+            delay = value(m.group(1), ln, 0, 7)
             line = line[:m.start()].strip()
         pace = 0
         toks = line.split(None, 1)
@@ -218,7 +219,7 @@ def assemble(text, origin=0, defines=None, name=None):
         elif mn == 'crctap':
             w = enc(7, delay, pace, (1 << 6) | pick(TAP, rest, ln, 'tap'))
         elif mn == 'stuff':
-            w = enc(7, delay, pace, (2 << 6) | {'on': 1, 'off': 0, '1': 1, '0': 0}[rest.strip().lower()])
+            w = enc(7, delay, pace, (2 << 6) | pick(STUFF, rest, ln, 'stuff mode'))
         elif mn in ('evset', 'evclr'):
             w = enc(7, delay, pace, ((3 if mn == 'evset' else 4) << 6) | value(rest, ln, 0, 3))
         else:
@@ -255,7 +256,7 @@ def main(argv=None):
         print(f'error: {e}', file=sys.stderr)
         return 1
     if args.hex:
-        print('\n'.join(f'{w:05x}' for w in p.words))
+        print('\n'.join(f'{w:04x}' for w in p.words))
     else:
         print(f'; {p.name}: {len(p)} words at {p.origin}, wrap {p.wrap_bot}..{p.wrap_top}')
         print(p.listing())

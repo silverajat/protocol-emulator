@@ -47,18 +47,18 @@ def cmd_id(h, args):
 def cmd_blink(h, args):
     p = assemble("""
     .wrap_target
-        set pins, 1 [31]
-        nop [31]
-        nop [31]
-        set pins, 0 [31]
-        nop [31]
-        nop [31]
+        set pins, 1
+        set x, 31
+    on: jmp x--, on [7]
+        set pins, 0
+        set x, 31
+    off: jmp x--, off [7]
     .wrap
     """, 40)
     h.write(R.CTRL, 0)
-    h.load(3, EngineConfig(clkdiv=0xFFFF, set_base=R.uo(6), set_cnt=1), p)
-    h.write(R.CTRL, 0x88)
-    print('LED0 should now blink about twice a second, run by engine 3 alone.')
+    h.load(2, EngineConfig(clkdiv=0x3FFF, set_base=R.uo(6), set_cnt=1), p)
+    h.write(R.CTRL, 0x44)
+    print('LED0 should now blink about once a second, run by engine 2 alone.')
     return True
 
 

@@ -117,10 +117,10 @@ async def board_uart_loopback_and_led(dut):
     .wrap
     """, len(tx) + len(rx))
     cfg_led = EngineConfig(clkdiv=3, set_base=R.uo(6), set_cnt=1)
-    for e, c, p in ((0, cfg_tx, tx), (1, cfg_rx, rx), (3, cfg_led, led)):
+    for e, c, p in ((0, cfg_tx, tx), (1, cfg_rx, rx), (2, cfg_led, led)):
         for addr, words in R.load_writes(e, c, p):
             await h.write(addr, words)
-    await h.write(R.CTRL, 0xBB)
+    await h.write(R.CTRL, 0x77)
     await h.write(R.TXF(0), [ord(c) for c in 'Hi!'])
     await ClockCycles(dut.clk27, 3 * 10 * bit + 200)
     got = [await h.read(R.RXF(1)) & 0xFF for _ in range(3)]

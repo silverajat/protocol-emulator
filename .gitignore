@@ -20,3 +20,4 @@ test/results.xml
 fpga/build
 fpga/sim/sim_build
 fpga/sim/results.xml
+.area/

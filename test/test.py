@@ -65,10 +65,13 @@ async def host_port_id_and_registers(dut):
     chip = await setup(dut)
     assert await chip.read(R.ID) == R.CHIP_ID
     assert await chip.read(R.ID, 3) == [R.CHIP_ID] * 3
-    await chip.write(R.ereg(2, 3), 0xDEADBEEF)
-    assert await chip.read(R.ereg(2, 3)) == 0xDEADBEEF
-    await chip.write(R.ereg(1, 1), 0xFFFFFFFF)
-    assert await chip.read(R.ereg(1, 1)) == 0x1FFFFFFF      # unused bits read 0
+    await chip.write(R.EVENTS, 0x5)
+    assert await chip.read(R.EVENTS) == 0x5
+    await chip.write(R.PIN_OD, 0xFFFF)
+    assert await chip.read(R.PIN_OD) == 0x3FFF                # 14 pins
+    await chip.write(R.CTRL, 0xF)
+    assert await chip.read(R.CTRL) == 0x7                     # 3 engines
+    await chip.write(R.CTRL, 0)
     t0 = await chip.read(R.TIME)
     t1 = await chip.read(R.TIME)
     assert 0 < t1 - t0 < 1000
@@ -76,14 +79,20 @@ async def host_port_id_and_registers(dut):
 
 @cocotb.test()
 async def host_port_program_memory(dut):
-    """64 program words written in one burst read back unchanged."""
+    """Program memory is write-only: check a 64-word burst by running what it wrote.
+    Every word is `set x, i` except the last, which jumps to word 0; the engine pushes
+    nothing, so instead we check its PC walks through all 64 addresses."""
     chip = await setup(dut)
-    words = [(i * 0x2F3B + 0x155) & 0x3FFFF for i in range(64)]
+    words = [assemble(f'set x, {i % 32}').words[0] for i in range(63)] + [assemble('jmp 0').words[0]]
     await chip.write(R.IMEM_ADDR, 0)
     await chip.write(R.IMEM_DATA, words)
-    for i in (0, 1, 17, 42, 63):
-        await chip.write(R.IMEM_ADDR, i)
-        assert await chip.read(R.IMEM_DATA) == words[i]
+    assert await chip.read(R.IMEM_ADDR) == 0          # pointer wrapped after 64 writes
+    await chip.load(1, EngineConfig(clkdiv=200))
+    await chip.write(R.CTRL, 0x22)
+    seen = set()
+    for _ in range(90):
+        seen.add((await chip.read(R.PCS) >> 6) & 63)
+    assert len(seen) > 50, f'PC visited only {len(seen)} addresses' 
 
 
 @cocotb.test()
@@ -166,11 +175,11 @@ async def host_port_fifo_burst(dut):
     end:
         jmp end
     """)
-    await chip.load(3, EngineConfig(), p)
-    await chip.write(R.CTRL, 0x88)
+    await chip.load(2, EngineConfig(), p)
+    await chip.write(R.CTRL, 0x44)
     await ClockCycles(dut.clk, 20)
-    assert (await chip.read(R.STATUS)) >> 12 & 0xF == 0b0100        # tx empty, rx neither
-    assert await chip.read(R.RXF(3), 2) == [1, 2]
-    assert await chip.read(R.RXF(3)) == 3
-    assert (await chip.read(R.STATUS)) >> 12 & 1 == 1                # rx empty now
-    assert await chip.read(R.RXF(3)) == 0                            # empty FIFO reads 0
+    assert (await chip.read(R.STATUS)) >> 8 & 0xF == 0b0100         # tx empty, rx neither
+    assert await chip.read(R.RXF(2), 2) == [1, 2]
+    assert await chip.read(R.RXF(2)) == 3
+    assert (await chip.read(R.STATUS)) >> 8 & 1 == 1                 # rx empty now
+    assert await chip.read(R.RXF(2)) == 0                            # empty FIFO reads 0

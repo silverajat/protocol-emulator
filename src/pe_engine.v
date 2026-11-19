@@ -23,7 +23,7 @@ module pe_engine (
     input  wire [4:0]  crc_wm1,
     // program memory
     output wire [5:0]  pc_o,
-    input  wire [17:0] instr,
+    input  wire [15:0] instr,
     // shared state
     input  wire [15:0] pins_in,
     input  wire [31:0] time_i,
@@ -74,12 +74,12 @@ module pe_engine (
   reg  [5:0]  pc;
   reg  [31:0] x, y, osr, isr, crc;
   reg  [5:0]  osr_cnt, isr_cnt;
-  reg  [4:0]  dly;
+  reg  [2:0]  dly;
   reg  [15:0] div;
   reg  [15:0] bt_cnt;
-  reg         bt_pend;
+  reg         pend_start, pend_samp;   // pending bit-start / sample-point ticks
   reg         rs_prev;
-  reg         tap_out, tap_in, stuff_en, last_bit, last_in;
+  reg         tap_out, tap_in, stuff_out_en, stuff_in_en, last_bit, last_out;
   reg  [3:0]  run;
 
   assign pc_o = pc;
@@ -121,12 +121,12 @@ module pe_engine (
   wire        rs_hit  = (rs_edge[0] & rs_prev & ~rs_cur) | (rs_edge[1] & ~rs_prev & rs_cur);
   wire        bt_on   = (bt_period != 16'd0);
   wire [15:0] bt_eff  = rs_hit ? 16'd0 : bt_cnt;
-  wire        bt_tick = bt_on & (bt_eff == bt_point);
-  wire        pace_ok = (bt_pend & ~rs_hit) | bt_tick;
+  wire        bt_start = bt_on & (bt_eff == 16'd0);       // a bit begins
+  wire        bt_samp  = bt_on & (bt_eff == bt_point);    // sample point
 
   // ---------------- decode ----------------
-  wire [2:0] op   = instr[17:15];
-  wire [4:0] dl   = instr[14:10];
+  wire [2:0] op   = instr[15:13];
+  wire [2:0] dl   = instr[12:10];
   wire       pace = instr[9];
   wire [8:0] a    = instr[8:0];
   wire [2:0] f86  = a[8:6];
@@ -150,15 +150,18 @@ module pe_engine (
   assign src_val[6] = isr;
   assign src_val[7] = osr;
 
+  wire [2:0] src_sel = (op == 3'd5) ? a[2:0] : f86;   // IN uses [8:6], MOV uses [2:0]
+
   // stuffing
-  wire stuff_active = stuff_en & (stuff_n != 4'd0);
-  wire stuff_due    = stuff_active & (run == stuff_n);
+  wire stuff_out_on = stuff_out_en & (stuff_n != 4'd0);
+  wire stuff_in_on  = stuff_in_en & (stuff_n != 4'd0);
+  wire stuff_full   = (run == stuff_n);
   wire stuff_bit    = stuff_ones ? 1'b0 : ~last_bit;
 
   // OUT
   wire        is_out       = (op == 3'd3);
   wire        out_pin1     = is_out & (f86 == 3'd0) & (n == 6'd1);
-  wire        do_stuff_out = out_pin1 & stuff_due;
+  wire        do_stuff_out = out_pin1 & stuff_out_on & stuff_full;
   wire        osr_empty    = (osr_cnt >= pull_th);
   wire        need_pull    = is_out & autopull & osr_empty & ~do_stuff_out;
   wire [31:0] osr_src      = need_pull ? tx_head : osr;
@@ -171,8 +174,8 @@ module pe_engine (
   // IN
   wire        is_in        = (op == 3'd2);
   wire        in_pin1      = is_in & (f86 == 3'd0) & (n == 6'd1);
-  wire        do_stuff_in  = in_pin1 & stuff_due;
-  wire [31:0] in_data      = src_val[f86];
+  wire        do_stuff_in  = in_pin1 & stuff_in_on & stuff_full;
+  wire [31:0] in_data      = src_val[src_sel];
   wire [31:0] isr_shifted  = in_shr ? ((isr >> n) | (in_data << nsh))
                                     : ((isr << n) | (in_data & lowmask(n)));
   wire [6:0]  icnt_sum     = {1'b0, isr_cnt} + {1'b0, n};
@@ -188,7 +191,7 @@ module pe_engine (
   wire pull_skip  = pp_if & ~osr_empty;
 
   // MOV
-  wire [31:0] mov_raw = src_val[a[2:0]];
+  wire [31:0] mov_raw = in_data;          // MOV and IN share the source multiplexer
   wire [31:0] mov_val = (a[4:3] == 2'd1) ? ~mov_raw : (a[4:3] == 2'd2) ? bitrev(mov_raw) : mov_raw;
 
   // WAIT
@@ -204,7 +207,8 @@ module pe_engine (
   end
 
   // JMP
-  wire jpin = jmp_src ? last_in : pins_in[jmp_pin];
+  // JMP_SRC: the pin equals the last bit this engine sent (bus monitoring for arbitration)
+  wire jpin = jmp_src ? ~(pins_in[jmp_pin] ^ last_out) : pins_in[jmp_pin];
   reg  jtake;
   always @(*) begin
     case (f86)
@@ -221,7 +225,7 @@ module pe_engine (
 
   // ---------------- stall and execute ----------------
   wire tick   = en & (div == 16'd0);
-  wire active = tick & (dly == 5'd0);
+  wire active = tick & (dly == 3'd0);
 
   reg op_stall;
   always @(*) begin
@@ -235,6 +239,11 @@ module pe_engine (
     endcase
   end
 
+  // paced pin writes wait for a bit start, every other paced instruction for the sample point
+  wire pace_out = ((op == 3'd3) & ((f86 == 3'd0) | (f86 == 3'd4))) |
+                  ((op == 3'd6) & ((f86 == 3'd0) | (f86 == 3'd3))) |
+                  ((op == 3'd5) & ((a[8:6] == 3'd0) | (a[8:6] == 3'd3)));
+  wire pace_ok = pace_out ? ((pend_start & ~rs_hit) | bt_start) : ((pend_samp & ~rs_hit) | bt_samp);
   wire exec = active & ~op_stall & ~(pace & ~pace_ok);
 
   wire [5:0] pc_seq = (pc == wrap_top) ? wrap_bot : pc + 6'd1;
@@ -307,16 +316,18 @@ module pe_engine (
       isr      <= 32'd0;
       osr_cnt  <= 6'd32;
       isr_cnt  <= 6'd0;
-      dly      <= 5'd0;
+      dly      <= 3'd0;
       div      <= 16'd0;
       bt_cnt   <= 16'd0;
-      bt_pend  <= 1'b0;
+      pend_start <= 1'b0;
+      pend_samp  <= 1'b0;
       crc      <= 32'd0;
       tap_out  <= 1'b0;
       tap_in   <= 1'b0;
-      stuff_en <= 1'b0;
+      stuff_out_en <= 1'b0;
+      stuff_in_en  <= 1'b0;
       last_bit <= 1'b0;
-      last_in  <= 1'b0;
+      last_out <= 1'b0;
       run      <= 4'd0;
     end else if (en) begin
       // clock divider
@@ -324,9 +335,11 @@ module pe_engine (
 
       // bit timer
       bt_cnt  <= ~bt_on ? 16'd0 : ((bt_eff == bt_period - 16'd1) ? 16'd0 : bt_eff + 16'd1);
-      bt_pend <= (exec & pace) ? 1'b0 : (rs_hit ? bt_tick : (bt_pend | bt_tick));
+      // executing a paced instruction clears both pending ticks; a resync edge restarts them
+      pend_start <= (exec & pace) ? 1'b0 : (rs_hit ? bt_start : (pend_start | bt_start));
+      pend_samp  <= (exec & pace) ? 1'b0 : (rs_hit ? bt_samp : (pend_samp | bt_samp));
 
-      if (tick & (dly != 5'd0)) dly <= dly - 5'd1;
+      if (tick & (dly != 3'd0)) dly <= dly - 3'd1;
 
       if (crc_feed) crc <= crc_next;
 
@@ -345,10 +358,9 @@ module pe_engine (
               last_bit <= pins_rot[0];
               run      <= stuff_ones ? {3'd0, pins_rot[0]} : 4'd1;
             end else begin
-              last_in <= in_data[0];
               if (autopush_hit) begin isr <= 32'd0; isr_cnt <= 6'd0; end
               else begin isr <= isr_shifted; isr_cnt <= icnt_after; end
-              if (in_pin1 & stuff_active) begin
+              if (in_pin1 & stuff_in_on) begin
                 last_bit <= pins_rot[0];
                 if (stuff_ones) run <= pins_rot[0] ? run_inc : 4'd0;
                 else            run <= (pins_rot[0] == last_bit && run != 4'd0) ? run_inc : 4'd1;
@@ -359,11 +371,13 @@ module pe_engine (
             if (do_stuff_out) begin
               pc       <= pc;
               last_bit <= stuff_bit;
+              last_out <= stuff_bit;
               run      <= stuff_ones ? 4'd0 : 4'd1;
             end else begin
               osr     <= osr_after;
               osr_cnt <= ocnt_after;
-              if (out_pin1 & stuff_active) begin
+              if (out_pin1) last_out <= out_data[0];
+              if (out_pin1 & stuff_out_on) begin
                 last_bit <= out_data[0];
                 if (stuff_ones) run <= out_data[0] ? run_inc : 4'd0;
                 else            run <= (out_data[0] == last_bit && run != 4'd0) ? run_inc : 4'd1;
@@ -410,7 +424,9 @@ module pe_engine (
           end
           3'd7: begin  // CTL
             if (f86 == 3'd1) begin tap_out <= a[0]; tap_in <= a[1]; end
-            if (f86 == 3'd2) begin stuff_en <= a[0]; run <= 4'd0; last_bit <= 1'b0; end
+            if (f86 == 3'd2) begin
+              stuff_out_en <= a[0]; stuff_in_en <= a[1]; run <= 4'd0; last_bit <= 1'b0;
+            end
           end
           default: ;
         endcase

@@ -6,6 +6,7 @@ The RTL is checked against this model cycle by cycle (test/test_diff.py).
 """
 
 M32 = 0xFFFFFFFF
+N_ENG = 3
 ID = 0x50454D55
 CFG0_MASK, CFG1_MASK, CFG2_MASK = 0x0FFFFFFF, 0x1FFFFFFF, 0x07FFFFFF
 
@@ -64,10 +65,10 @@ class Engine:
         self.x = self.y = self.osr = self.isr = 0
         self.osr_cnt, self.isr_cnt = 32, 0
         self.dly = self.div = self.bt_cnt = 0
-        self.bt_pend = 0
+        self.pend_start = self.pend_samp = 0
         self.crc = 0
-        self.tap_out = self.tap_in = self.stuff_en = 0
-        self.last_bit = self.last_in = 0
+        self.tap_out = self.tap_in = self.stuff_out_en = self.stuff_in_en = 0
+        self.last_bit = self.last_out = 0
         self.run = 0
         self.tx.q.clear()
         self.rx.q.clear()
@@ -99,11 +100,11 @@ class Engine:
         rs_hit = ((rs_edge & 1) and rs_prev and not rs_cur) or ((rs_edge & 2) and not rs_prev and rs_cur)
         bt_on = bt_period != 0
         bt_eff = 0 if rs_hit else self.bt_cnt
-        bt_tick = bt_on and bt_eff == bt_point
-        pace_ok = (self.bt_pend and not rs_hit) or bt_tick
+        bt_start = bt_on and bt_eff == 0
+        bt_samp = bt_on and bt_eff == bt_point
 
         instr = imem[self.pc]
-        op, dl, pace, a = instr >> 15, (instr >> 10) & 31, (instr >> 9) & 1, instr & 0x1FF
+        op, dl, pace, a = instr >> 13, (instr >> 10) & 7, (instr >> 9) & 1, instr & 0x1FF
         f86 = a >> 6
         n = (a & 31) or 32
         nsh = 32 - n
@@ -114,13 +115,14 @@ class Engine:
         def src(s):
             return [rot, self.x, self.y, 0, time, crc_la, self.isr, self.osr][s]
 
-        stuff_active = self.stuff_en and stuff_n != 0
-        stuff_due = stuff_active and self.run == stuff_n
+        stuff_out_on = self.stuff_out_en and stuff_n != 0
+        stuff_in_on = self.stuff_in_en and stuff_n != 0
+        stuff_full = self.run == stuff_n
         stuff_bit = 0 if stuff_ones else 1 - self.last_bit
 
         is_out = op == 3
         out_pin1 = is_out and f86 == 0 and n == 1
-        do_stuff_out = out_pin1 and stuff_due
+        do_stuff_out = out_pin1 and stuff_out_on and stuff_full
         osr_empty = self.osr_cnt >= pull_th
         need_pull = is_out and autopull and osr_empty and not do_stuff_out
         osr_src = self.tx.head if need_pull else self.osr
@@ -135,7 +137,7 @@ class Engine:
 
         is_in = op == 2
         in_pin1 = is_in and f86 == 0 and n == 1
-        do_stuff_in = in_pin1 and stuff_due
+        do_stuff_in = in_pin1 and stuff_in_on and stuff_full
         in_data = src(f86)
         if in_shr:
             isr_shifted = ((self.isr >> n) if n < 32 else 0) | ((in_data << nsh) & M32)
@@ -149,7 +151,7 @@ class Engine:
         push_skip = pp_if and self.isr_cnt < push_th
         pull_skip = pp_if and not osr_empty
 
-        mov_raw = src(a & 7)
+        mov_raw = src(a & 7)                  # (shares the IN source multiplexer in hardware)
         mop = (a >> 3) & 3
         mov_val = (~mov_raw & M32) if mop == 1 else bitrev32(mov_raw) if mop == 2 else mov_raw
 
@@ -163,7 +165,7 @@ class Engine:
         else:
             wait_val = 0
 
-        jpin = self.last_in if jmp_src else bit(pins_in, jmp_pin)
+        jpin = (bit(pins_in, jmp_pin) == self.last_out) if jmp_src else bit(pins_in, jmp_pin)
         jtake = [True, self.x == 0, self.x != 0, self.y == 0, self.y != 0, self.x != self.y,
                  bool(jpin), not osr_empty][f86]
 
@@ -180,6 +182,12 @@ class Engine:
                        (not push_skip and self.rx.full and pp_block)
         else:
             op_stall = False
+        d86 = a >> 6
+        pace_out = (op == 3 and d86 in (0, 4)) or (op == 6 and d86 in (0, 3)) or (op == 5 and d86 in (0, 3))
+        if pace_out:
+            pace_ok = (self.pend_start and not rs_hit) or bt_start
+        else:
+            pace_ok = (self.pend_samp and not rs_hit) or bt_samp
         execute = active and not op_stall and not (pace and not pace_ok)
 
         if not en:
@@ -192,11 +200,12 @@ class Engine:
         else:
             new['bt_cnt'] = 0 if bt_eff == bt_period - 1 else bt_eff + 1
         if execute and pace:
-            new['bt_pend'] = 0
+            new['pend_start'] = new['pend_samp'] = 0
         elif rs_hit:
-            new['bt_pend'] = int(bt_tick)
+            new['pend_start'], new['pend_samp'] = int(bt_start), int(bt_samp)
         else:
-            new['bt_pend'] = int(self.bt_pend or bt_tick)
+            new['pend_start'] = int(self.pend_start or bt_start)
+            new['pend_samp'] = int(self.pend_samp or bt_samp)
         if tick and self.dly != 0:
             new['dly'] = self.dly - 1
 
@@ -251,13 +260,12 @@ class Engine:
                 new['last_bit'] = rot & 1
                 new['run'] = (rot & 1) if stuff_ones else 1
             else:
-                new['last_in'] = in_data & 1
                 if autopush_hit:
                     new['isr'], new['isr_cnt'] = 0, 0
                     req['rx_push'] = isr_shifted
                 else:
                     new['isr'], new['isr_cnt'] = isr_shifted, icnt_after
-                if in_pin1 and stuff_active:
+                if in_pin1 and stuff_in_on:
                     run_update(rot & 1)
                 if in_pin1 and self.tap_in:
                     crc_feed(rot & 1)
@@ -265,6 +273,7 @@ class Engine:
             if do_stuff_out:
                 new['pc'] = self.pc
                 new['last_bit'] = stuff_bit
+                new['last_out'] = stuff_bit
                 new['run'] = 0 if stuff_ones else 1
                 req['pv_mask'] = out_win
                 req['pv_val'] = (stuff_bit << out_base) & 0xFFFF
@@ -272,7 +281,9 @@ class Engine:
                 if need_pull:
                     req['tx_pop'] = True
                 new['osr'], new['osr_cnt'] = osr_after, ocnt_after
-                if out_pin1 and stuff_active:
+                if out_pin1:
+                    new['last_out'] = out_data & 1
+                if out_pin1 and stuff_out_on:
                     run_update(out_data & 1)
                 if out_pin1 and self.tap_out:
                     crc_feed(out_data & 1)
@@ -342,7 +353,8 @@ class Engine:
             if f86 == 1:
                 new['tap_out'], new['tap_in'] = a & 1, (a >> 1) & 1
             elif f86 == 2:
-                new['stuff_en'], new['run'], new['last_bit'] = a & 1, 0, 0
+                new['stuff_out_en'], new['stuff_in_en'] = a & 1, (a >> 1) & 1
+                new['run'], new['last_bit'] = 0, 0
             elif f86 == 3:
                 req['ev_set'] |= 1 << (a & 3)
             elif f86 == 4:
@@ -352,7 +364,7 @@ class Engine:
 
 class Core:
     def __init__(self):
-        self.eng = [Engine() for _ in range(4)]
+        self.eng = [Engine() for _ in range(N_ENG)]
         self.imem = [0] * 64
         self.ctrl_en = 0
         self.imem_ptr = 0
@@ -396,8 +408,6 @@ class Core:
                 return self.ctrl_en
             if addr == 0x2:
                 return self.imem_ptr
-            if addr == 0x3:
-                return self.imem[self.imem_ptr]
             if addr == 0x4:
                 return self.status()
             if addr == 0x5:
@@ -411,18 +421,9 @@ class Core:
             if addr == 0x9:
                 return sum(g.pc << (6 * e) for e, g in enumerate(self.eng))
             return 0
-        if addr < 0x30:
+        if addr < 0x10 + 8 * N_ENG:
             e, k = (addr - 0x10) >> 3, (addr - 0x10) & 7
-            g = self.eng[e]
-            if k < 4:
-                return g.cfg[k]
-            if k == 4:
-                return g.poly
-            if k == 5:
-                return g.crcw
-            if k == 6:
-                return 0
-            return g.rx.head
+            return self.eng[e].rx.head if k == 7 else 0     # configuration is write-only
         return 0
 
     def step(self, ui_in=0, uio_in=0, we=False, re=False, addr=0, wdata=0, rst=False):
@@ -440,9 +441,9 @@ class Core:
             return rdata
 
         g_sel = addr < 0x10
-        eng_sel = 0x10 <= addr < 0x30
+        eng_sel = 0x10 <= addr < 0x10 + 8 * N_ENG
         esel, ereg = ((addr - 0x10) >> 3) & 3, (addr - 0x10) & 7
-        restart = ((wdata >> 4) & 0xF) if (we and g_sel and addr == 1) else 0
+        restart = ((wdata >> 4) & ((1 << N_ENG) - 1)) if (we and g_sel and addr == 1) else 0
 
         results = []
         for e, g in enumerate(self.eng):
@@ -491,11 +492,11 @@ class Core:
 
         if we and g_sel:
             if addr == 0x1:
-                self.ctrl_en = wdata & 0xF
+                self.ctrl_en = wdata & ((1 << N_ENG) - 1)
             elif addr == 0x2:
                 self.imem_ptr = wdata & 63
             elif addr == 0x3:
-                self.imem[self.imem_ptr] = wdata & 0x3FFFF
+                self.imem[self.imem_ptr] = wdata & 0xFFFF
                 self.imem_ptr = (self.imem_ptr + 1) & 63
             elif addr == 0x6:
                 self.pin_od = wdata & 0x3FFF

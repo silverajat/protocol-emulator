@@ -2,11 +2,11 @@
  * Copyright (c) 2026 Rajat Gupta
  * SPDX-License-Identifier: Apache-2.0
  *
- * Protocol emulator core: 4 engines, shared program memory, pins, events, cycle counter
+ * Protocol emulator core: 3 engines, shared program memory, pins, events, cycle counter
  * and the register file seen by the host. Specified in docs/ISA.md.
  *
  * Host bus: bus_we (1 clock) writes bus_wdata to bus_addr. bus_rdata always shows bus_addr;
- * bus_re (1 clock) marks the clock a read value is taken, for read side effects (RXF pop).
+ * bus_re (1 clock) marks a read word that the host has received (RXF pops on it).
  */
 
 `default_nettype none
@@ -29,57 +29,68 @@ module pe_core (
     output reg  [31:0] bus_rdata
 );
 
+  localparam integer N = 3;              // engines
   localparam [31:0] ID = 32'h5045_4D55;  // "PEMU"
   localparam [31:0] CFG0_MASK = 32'h0FFF_FFFF;
   localparam [31:0] CFG1_MASK = 32'h1FFF_FFFF;
   localparam [31:0] CFG2_MASK = 32'h07FF_FFFF;
 
   // ---------------- registers ----------------
-  reg  [3:0]  ctrl_en;
-  reg  [5:0]  imem_ptr;
-  reg  [13:0] pin_od;
-  reg  [3:0]  events;
-  reg  [31:0] time_cnt;
-  reg  [13:0] pin_val;
-  reg  [7:0]  pin_dir;
-  reg  [15:0] sync1, sync2;
-  reg  [17:0] imem [0:63];
+  reg  [N-1:0] ctrl_en;
+  reg  [5:0]   imem_ptr;
+  reg  [13:0]  pin_od;
+  reg  [3:0]   events;
+  reg  [31:0]  time_cnt;
+  reg  [13:0]  pin_val;
+  reg  [7:0]   pin_dir;
+  reg  [15:0]  sync1, sync2;
+  reg  [15:0]  imem [0:63];
 
-  reg  [31:0] cfg0 [0:3];
-  reg  [31:0] cfg1 [0:3];
-  reg  [31:0] cfg2 [0:3];
-  reg  [31:0] cfg3 [0:3];
-  reg  [31:0] poly [0:3];
-  reg  [4:0]  crcw [0:3];
+  reg  [31:0]  cfg0 [0:N-1];
+  reg  [31:0]  cfg1 [0:N-1];
+  reg  [31:0]  cfg2 [0:N-1];
+  reg  [31:0]  cfg3 [0:N-1];
+  reg  [31:0]  poly [0:N-1];
+  reg  [4:0]   crcw [0:N-1];
 
   wire [15:0] pins_in = sync2;
   wire [15:0] raw_in  = {3'b000, ui_in[7:3], uio_in};
 
   // ---------------- host decode ----------------
   wire       g_sel   = (bus_addr[6:4] == 3'b000);
-  // engine registers live at 0x10..0x2F: engine e at 0x10 + 8e
-  wire       eng_sel = (bus_addr >= 7'h10) && (bus_addr < 7'h30);
+  // engine registers: engine e at 0x10 + 8e
+  localparam [6:0] ENG_END = 7'h10 + 7'd8 * N[6:0];
+  wire       eng_sel = (bus_addr >= 7'h10) && (bus_addr < ENG_END);
   wire [6:0] eoff    = bus_addr - 7'h10;
   wire [1:0] esel    = eoff[4:3];
   wire [2:0] ereg    = eoff[2:0];
 
-  wire [3:0] restart;
-  assign restart = (bus_we && g_sel && bus_addr[3:0] == 4'h1) ? bus_wdata[7:4] : 4'b0000;
+  wire [N-1:0] restart = (bus_we && g_sel && bus_addr[3:0] == 4'h1) ? bus_wdata[4+N-1:4] : {N{1'b0}};
 
   // ---------------- engines ----------------
-  wire [5:0]  pc       [0:3];
-  wire [3:0]  ev_set   [0:3];
-  wire [3:0]  ev_clr   [0:3];
-  wire [15:0] pv_mask  [0:3];
-  wire [15:0] pv_val   [0:3];
-  wire [15:0] pd_mask  [0:3];
-  wire [15:0] pd_val   [0:3];
-  wire [31:0] rx_head  [0:3];
-  wire [3:0]  tx_full, tx_empty, rx_full, rx_empty;
+  wire [5:0]   pc       [0:N-1];
+  wire [3:0]   ev_set   [0:N-1];
+  wire [3:0]   ev_clr   [0:N-1];
+  wire [15:0]  pv_mask  [0:N-1];
+  wire [15:0]  pv_val   [0:N-1];
+  wire [15:0]  pd_mask  [0:N-1];
+  wire [15:0]  pd_val   [0:N-1];
+  wire [31:0]  rx_head  [0:N-1];
+  wire [N-1:0] tx_full, tx_empty, rx_full, rx_empty;
+
+  // pin writes: the highest-numbered engine wins
+  wire [15:0] pv_chain  [0:N];
+  wire [15:0] pd_chain  [0:N];
+  wire [3:0]  evs_chain [0:N];
+  wire [3:0]  evc_chain [0:N];
+  assign pv_chain[0]  = {2'b00, pin_val};
+  assign pd_chain[0]  = {8'd0, pin_dir};
+  assign evs_chain[0] = 4'd0;
+  assign evc_chain[0] = 4'd0;
 
   genvar g;
   generate
-    for (g = 0; g < 4; g = g + 1) begin : g_eng
+    for (g = 0; g < N; g = g + 1) begin : g_eng
       wire tx_push = bus_we && eng_sel && esel == g && ereg == 3'd6;
       wire rx_pop  = bus_re && eng_sel && esel == g && ereg == 3'd7;
       pe_engine u_eng (
@@ -93,21 +104,12 @@ module pe_core (
           .tx_push(tx_push), .tx_din(bus_wdata), .rx_pop(rx_pop), .rx_head(rx_head[g]),
           .tx_full(tx_full[g]), .tx_empty(tx_empty[g]), .rx_full(rx_full[g]), .rx_empty(rx_empty[g])
       );
+      assign pv_chain[g+1]  = (pv_chain[g] & ~pv_mask[g]) | (pv_val[g] & pv_mask[g]);
+      assign pd_chain[g+1]  = (pd_chain[g] & ~pd_mask[g]) | (pd_val[g] & pd_mask[g]);
+      assign evs_chain[g+1] = evs_chain[g] | ev_set[g];
+      assign evc_chain[g+1] = evc_chain[g] | ev_clr[g];
     end
   endgenerate
-
-  // pin writes: engine 3 has the highest priority
-  wire [15:0] pv_s0 = ({2'b00, pin_val} & ~pv_mask[0]) | (pv_val[0] & pv_mask[0]);
-  wire [15:0] pv_s1 = (pv_s0 & ~pv_mask[1]) | (pv_val[1] & pv_mask[1]);
-  wire [15:0] pv_s2 = (pv_s1 & ~pv_mask[2]) | (pv_val[2] & pv_mask[2]);
-  wire [15:0] pv_s3 = (pv_s2 & ~pv_mask[3]) | (pv_val[3] & pv_mask[3]);
-  wire [15:0] pd_s0 = ({8'd0, pin_dir} & ~pd_mask[0]) | (pd_val[0] & pd_mask[0]);
-  wire [15:0] pd_s1 = (pd_s0 & ~pd_mask[1]) | (pd_val[1] & pd_mask[1]);
-  wire [15:0] pd_s2 = (pd_s1 & ~pd_mask[2]) | (pd_val[2] & pd_mask[2]);
-  wire [15:0] pd_s3 = (pd_s2 & ~pd_mask[3]) | (pd_val[3] & pd_mask[3]);
-
-  wire [3:0] ev_set_all = ev_set[0] | ev_set[1] | ev_set[2] | ev_set[3];
-  wire [3:0] ev_clr_all = ev_clr[0] | ev_clr[1] | ev_clr[2] | ev_clr[3];
 
   // ---------------- outputs ----------------
   assign uo_gp = pin_val[13:8];
@@ -121,37 +123,38 @@ module pe_core (
   assign irq = events[3];
 
   // ---------------- host read mux ----------------
-  wire [15:0] status = {tx_full[3], tx_empty[3], rx_full[3], rx_empty[3],
-                        tx_full[2], tx_empty[2], rx_full[2], rx_empty[2],
-                        tx_full[1], tx_empty[1], rx_full[1], rx_empty[1],
-                        tx_full[0], tx_empty[0], rx_full[0], rx_empty[0]};
+  // STATUS: engine e at bits [4e+3:4e] = {tx_full, tx_empty, rx_full, rx_empty}
+  reg [15:0] status;
+  reg [17:0] pcs;
+  integer k;
+  always @(*) begin
+    status = 16'd0;
+    pcs    = 18'd0;
+    for (k = 0; k < N; k = k + 1) begin
+      status[4*k +: 4] = {tx_full[k], tx_empty[k], rx_full[k], rx_empty[k]};
+      pcs[6*k +: 6]    = pc[k];
+    end
+  end
+
   always @(*) begin
     bus_rdata = 32'd0;
     if (g_sel) begin
       case (bus_addr[3:0])
         4'h0: bus_rdata = ID;
-        4'h1: bus_rdata = {28'd0, ctrl_en};
+        4'h1: bus_rdata = {{(32-N){1'b0}}, ctrl_en};
         4'h2: bus_rdata = {26'd0, imem_ptr};
-        4'h3: bus_rdata = {14'd0, imem[imem_ptr]};
         4'h4: bus_rdata = {16'd0, status};
         4'h5: bus_rdata = time_cnt;
         4'h6: bus_rdata = {18'd0, pin_od};
         4'h7: bus_rdata = {28'd0, events};
         4'h8: bus_rdata = {2'd0, pin_val, pins_in};
-        4'h9: bus_rdata = {8'd0, pc[3], pc[2], pc[1], pc[0]};
+        4'h9: bus_rdata = {14'd0, pcs};
         default: bus_rdata = 32'd0;
       endcase
     end else if (eng_sel) begin
-      case (ereg)
-        3'd0: bus_rdata = cfg0[esel];
-        3'd1: bus_rdata = cfg1[esel];
-        3'd2: bus_rdata = cfg2[esel];
-        3'd3: bus_rdata = cfg3[esel];
-        3'd4: bus_rdata = poly[esel];
-        3'd5: bus_rdata = {27'd0, crcw[esel]};
-        3'd6: bus_rdata = 32'd0;
-        default: bus_rdata = rx_empty[esel] ? 32'd0 : rx_head[esel];
-      endcase
+      // configuration and program memory are write-only (the host keeps its own copy):
+      // their read multiplexers would cost about 15% of the chip area
+      if (ereg == 3'd7) bus_rdata = rx_empty[esel] ? 32'd0 : rx_head[esel];
     end
   end
 
@@ -160,17 +163,17 @@ module pe_core (
   always @(posedge clk) begin
     sync1 <= raw_in;
     sync2 <= sync1;
-    if (bus_we && g_sel && bus_addr[3:0] == 4'h3) imem[imem_ptr] <= bus_wdata[17:0];
+    if (bus_we && g_sel && bus_addr[3:0] == 4'h3) imem[imem_ptr] <= bus_wdata[15:0];
 
     if (~rst_n) begin
-      ctrl_en  <= 4'd0;
+      ctrl_en  <= {N{1'b0}};
       imem_ptr <= 6'd0;
       pin_od   <= 14'd0;
       events   <= 4'd0;
       time_cnt <= 32'd0;
       pin_val  <= 14'h3FFF;    // outputs idle high; open-drain pins released
       pin_dir  <= 8'd0;
-      for (i = 0; i < 4; i = i + 1) begin
+      for (i = 0; i < N; i = i + 1) begin
         cfg0[i] <= {4'd0, 6'd63, 6'd0, 16'd0};
         cfg1[i] <= 32'd0;
         cfg2[i] <= 32'd0;
@@ -180,13 +183,13 @@ module pe_core (
       end
     end else begin
       time_cnt <= time_cnt + 32'd1;
-      pin_val  <= pv_s3[13:0];
-      pin_dir  <= pd_s3[7:0];
-      events   <= (events & ~ev_clr_all) | ev_set_all;
+      pin_val  <= pv_chain[N][13:0];
+      pin_dir  <= pd_chain[N][7:0];
+      events   <= (events & ~evc_chain[N]) | evs_chain[N];
 
       if (bus_we && g_sel) begin
         case (bus_addr[3:0])
-          4'h1: ctrl_en  <= bus_wdata[3:0];
+          4'h1: ctrl_en  <= bus_wdata[N-1:0];
           4'h2: imem_ptr <= bus_wdata[5:0];
           4'h3: imem_ptr <= imem_ptr + 6'd1;
           4'h6: pin_od   <= bus_wdata[13:0];
