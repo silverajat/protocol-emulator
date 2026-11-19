@@ -8,7 +8,7 @@
 |---|---|
 | `src/project.v`, `src/hello_uart.v` | The chip (the RTL that goes to Tiny Tapeout). Gate 0 = a fixed UART on `uo_out[2]` |
 | `test/test.py` | cocotb tests: line idles high in reset, full message bit-exact, exact bit timing |
-| `info.yaml`, `src/config.json` | Tiny Tapeout settings: 8x4 tiles, top `tt_um_silverajat_protoemu`, 60 MHz target |
+| `info.yaml`, `src/config.json` | Tiny Tapeout settings: 8x4 tiles, top `tt_um_silverajat_protoemu`, 50 MHz target (20 ns) |
 | `fpga/ledboard_top.v`, `fpga/ledboard.cst` | Harness: makes the LED board's FPGA pretend to be the chip |
 | `fpga/prebuilt/ledboard_gate0.fs` | Ready-made bitstream (built with Yosys + nextpnr + Apicula, timing passes) |
 | `fpga/load_temp.bat` | Optional: loads the bitstream through a CH347 on J2 instead |

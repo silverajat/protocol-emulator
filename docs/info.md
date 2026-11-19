@@ -12,7 +12,7 @@ The full instruction set and register map are in [ISA.md](ISA.md). Example progr
 
 ## How to test
 
-1. Clock the chip at up to 60 MHz and release reset.
+1. Clock the chip at up to 50 MHz and release reset.
 2. Over SPI, read register 0x00: it returns `0x50454D55` ("PEMU").
 3. Assemble `sw/programs/uart_tx.pio` and load it (program memory at register 0x02 / 0x03, engine configuration at 0x10-0x15, see ISA.md); `sw/pemu/host.py` does all of this.
 4. Set CTRL (0x01) to 0x11 to start engine 0, write bytes to its TX FIFO (0x16), and they come out as UART on `uo_out[2]`.
