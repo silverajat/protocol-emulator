@@ -1,42 +1,41 @@
-![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
+![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg)
 
-# Tiny Tapeout Verilog Project Template
+# Protocol Emulator
 
-- [Read the documentation for project](docs/info.md)
+A Tiny Tapeout chip (IHP 130 nm, 8x4 tiles) with three programmable timing engines that run wire protocols as software: CAN, I2C, SPI, UART, and protocols it was not designed for. Built for Jane Street's Protocol Emulator challenge, and for the NUS Mars Rovers drive-train power bench: one chip that commands the CubeMars motors over CAN while it reads the power monitor (I2C) and a fast ADC (SPI), all stamped on one clock.
 
-## What is Tiny Tapeout?
+| | |
+|---|---|
+| Architecture, ISA, registers | [docs/ISA.md](docs/ISA.md) |
+| Datasheet page | [docs/info.md](docs/info.md) |
+| Protocol programs | [sw/programs/](sw/programs/) (`can.pio`, `i2c_master.pio`, `spi_master.pio`, `uart_tx.pio`, `uart_rx.pio`) |
+| Assembler | `python sw/pemu/asm.py sw/programs/can.pio` |
+| Golden model | [sw/pemu/model.py](sw/pemu/model.py) |
+| Host tools | [sw/pemu/host.py](sw/pemu/host.py), [sw/pemu/can.py](sw/pemu/can.py), [sw/pe.py](sw/pe.py) |
+| Tests | [test/](test/) (cocotb), [sw/test_tools.py](sw/test_tools.py) (pytest) |
+| LED-board prototype (FPGA plays the chip) | [fpga/](fpga/), [esp32/pe_bridge/](esp32/pe_bridge/) |
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+## What one engine can be
 
-To learn more and get started, visit https://tinytapeout.com.
+The engines know nothing about any protocol. They offer generic pieces (shift registers, FIFOs, a bit timer that locks onto bus edges, two pacing points per bit, a bit stuffer, a CRC unit, a clocked serial shifter, bus monitoring), and the protocol lives in a few words of program:
 
-## Set up your Verilog project
+| Program | Words | What it does |
+|---|---|---|
+| `can.pio` | 45 | A complete CAN 2.0A/B node: receives and ACKs every frame (11- and 29-bit IDs), sends queued frames with arbitration and an ACK check, timestamps every start of frame |
+| `i2c_master.pio` | 13 | I2C master: START / repeated START / STOP, ACK/NACK, clock stretching |
+| `spi_master.pio` | 6 | SPI master, any mode, full duplex |
+| `uart_tx.pio`, `uart_rx.pio` | 6, 10 | UART 8N1, receiver locked to every edge, framing errors flagged |
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+The bench's three programs together fill the 64-word program memory exactly, and run at the same time.
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
+## Run the tests
 
-## Enable GitHub actions to build the results page
+```
+cd test && make                    # 20 cocotb tests: RTL vs golden model, protocols vs device models
+python -m pytest sw/test_tools.py  # assembler, CAN helpers, pe.py demos on a virtual board
+python sw/pe.py --sim can          # any pe.py demo, on the golden model (no hardware)
+```
 
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
+## On the LED board
 
-## Resources
-
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
-
-## What next?
-
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+Double-click `gate1_run.bat`: it flashes the ESP32 (which loads the chip into the FPGA), then runs the demos through `sw/pe.py`: chip ID, an engine blinking LED0, UART between two engines, and CAN between two engines (fit a jumper between J3 pins 9 and 10).
