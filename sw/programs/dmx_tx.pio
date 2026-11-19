@@ -1,0 +1,28 @@
+; DMX512 transmitter (stage lighting: dimmers, moving heads, LED pars over RS-485).
+; A packet is a BREAK (line low >= 88 us), a MARK AFTER BREAK (high >= 8 us), then a start code
+; and up to 512 channel bytes, each 8N2 at 250 kbit/s. It is the UART program plus a break.
+; Written after the RTL was frozen.
+; Config: SERIAL, OUT and SET windows = the TX pin (to an RS-485 driver), OUT_SHR,
+;         BT_PERIOD = clock / 250 kHz (240 at 60 MHz), BT_POINT e.g. the middle.
+; Host words: [0] = 1 to start a new packet (break + mark first), [8:1] = the byte.
+;   The first byte of a packet is the start code (0 for dimmer data).
+.program dmx_tx
+    set pindirs, 1
+.wrap_target
+    pull block
+    nop.p                   ; drop a stale bit-start tick
+    out x, 1
+    jmp !x, byte
+    set.p pins, 0           ; BREAK: 24 bit times = 96 us
+    set x, 22
+brk:
+    jmp.p x--, brk
+    set.p pins, 1           ; MARK AFTER BREAK: 2 bit times = 8 us
+    nop.p
+    nop.p
+byte:
+    set.p pins, 0           ; start bit
+    out.p pins, 8
+    set.p pins, 1           ; two stop bits (the second ends at the next start bit)
+    nop.p
+.wrap

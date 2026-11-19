@@ -207,3 +207,63 @@ async def swd_debug_port(dut):
     assert ack == swd.ACK_OK and stat == 0xF0000000, hex(stat or 0)   # CSYS/CDBG PWRUPACK set
     assert target.log[:2] == [('swd',), ('reset',)], target.log
     assert ('W', 0x4, 0x50000000) in target.log
+
+
+@cocotb.test()
+async def dmx512_packet(dut):
+    """DMX512: BREAK, MARK AFTER BREAK, start code and channels at 250 kbit/s 8N2, decoded from the
+    pin with the spec's timing limits; two packets back to back."""
+    chip = await setup(dut)
+    p = prog('dmx_tx', 0)
+    bit = 240                                       # 250 kbit/s at 60 MHz
+    await chip.load(0, EngineConfig(serial=True, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2),
+                                    set_cnt=1, out_shr=True, bt_period=bit, bt_point=bit // 2), p)
+    await chip.write(R.CTRL, 0x11)
+    runs = []                                       # (level, length in clocks)
+
+    async def watch():
+        prev, n = chip.uo(2), 0
+        while True:
+            await FallingEdge(dut.clk)
+            v = chip.uo(2)
+            if v != prev:
+                runs.append((prev, n))
+                prev, n = v, 0
+            n += 1
+    w = cocotb.start_soon(watch())
+    packets = [[0, 255, 128, 0, 17, 42], [0, 1, 2, 3]]
+    for pk in packets:
+        for i, b in enumerate(pk):
+            while (await chip.read(R.STATUS)) >> 3 & 1:
+                await ClockCycles(dut.clk, 200)
+            await chip.write(R.TXF(0), (b << 1) | (i == 0))
+    while not (await chip.read(R.STATUS)) >> 2 & 1:   # TX FIFO empty
+        await ClockCycles(dut.clk, 200)
+    await ClockCycles(dut.clk, 30 * bit)
+    w.kill()
+    # rebuild the waveform as levels per clock, then decode it
+    wave = []
+    for lv, n in runs[1:]:                         # skip the idle before the first break
+        wave += [lv] * n
+    wave += [1] * (20 * bit)
+    got, i = [], 0
+    while i < len(wave):
+        if wave[i]:
+            i += 1
+            continue
+        j = i
+        while j < len(wave) and not wave[j]:
+            j += 1
+        if j - i >= 88 * 60:                        # BREAK >= 88 us
+            k = j
+            while wave[k]:
+                k += 1
+            assert k - j >= 8 * 60, f'MAB {(k - j) / 60:.1f} us'
+            got.append([])
+            i = k
+            continue
+        b = sum(wave[i + bit // 2 + bit * (n + 1)] << n for n in range(8))   # 8 data bits
+        assert wave[i + bit * 9 + bit // 2] and wave[i + bit * 10 + bit // 2], 'missing stop bits'
+        got[-1].append(b)
+        i += bit * 10
+    assert got == packets, got

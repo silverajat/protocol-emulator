@@ -43,6 +43,7 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `manchester_link` | two engines over a wire | 8 bytes (all zeros, all ones, alternating, single bits), recovered with no bit timer; the line only ever changes at half-bit and full-bit spacing |
 | `ir_remote_nec` | envelope decoder for a carrier-modulated pin | 50% duty carrier; NEC leader, 32 bits and inverted-byte checks decode to the sent address and command |
 | `swd_debug_port` | ARM SW-DP model: JTAG-to-SWD select, line reset, request parity, ACK, turnarounds, DP registers | IDCODE 0x2BA01477 read; CTRL/STAT power-up written (parity checked by the target) and its acknowledge read back |
+| `dmx512_packet` | waveform decoder with the DMX512 timing limits | BREAK >= 88 us, MARK AFTER BREAK >= 8 us, start code and channels 8N2, two packets back to back |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 
 ## 4. Gate level
