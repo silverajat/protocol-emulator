@@ -1,0 +1,49 @@
+; ARM Serial Wire Debug (SWD) host: the two-wire debug port of every Cortex-M (STM32, RP2040,
+; nRF...). One data wire changes direction inside every transaction, with a turnaround clock
+; between. Written after the RTL was frozen.
+; Config: SERIAL with CLK on SWCLK (CLK_PIN = SWCLK, CPOL 0, CPHA 0); OUT window = IN_BASE =
+;         SWDIO; SET window = {SWDIO, SWCLK} (2 pins, in this order); OUT_SHR, IN_SHR (LSB first).
+;         One bit takes 4 ticks; use CLKDIV >= 3 so a sample comes well after the target's edge.
+; The target drives SWDIO after a rising edge; the host samples one tick after it and drives
+; just before the next one (sw/pemu/swd.py builds the words).
+; Host words, LSB first: [5:0] = step address, then:
+;   seq    next word = 32 raw bits (line reset, JTAG-to-SWD, idle)
+;   req    [13:6] = request byte -> returns [3:1] = ACK (1 = OK)
+;   rdata  -> returns the data word, then a word with bit 0 = parity
+;   wdata  [6] = parity; next word = data
+.program swd
+    set pindirs, 3
+.wrap_target
+top:
+    pull block
+    out pc, 6
+seq:
+    set pindirs, 3
+    pull block
+    out pins, 32
+    jmp top
+req:
+    set pindirs, 3
+    out pins, 8             ; start, APnDP, RnW, A[3:2], parity, stop, park
+    set pindirs, 2          ; release SWDIO
+    in pins, 1              ; turnaround
+    in pins, 3              ; ACK
+    push align
+    jmp top
+rdata:
+    in pins, 32
+    push block
+    in pins, 1              ; parity
+    in pins, 1              ; turnaround (the target lets go)
+    push align
+    jmp top
+wdata:
+    out y, 1                ; parity, kept for after the data
+    in pins, 1              ; turnaround (the target lets go)
+    set pindirs, 3
+    pull block
+    out pins, 32
+    mov osr, y
+    out pins, 1
+    mov isr, null           ; drop the turnaround sample
+.wrap

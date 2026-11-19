@@ -42,6 +42,7 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `onewire_ds18b20` | DS18B20 on one open-drain wire: reset/presence, time slots, ROM and function commands, scratchpad with CRC-8 | presence detect, SKIP ROM + CONVERT T + READ SCRATCHPAD, temperature decoded and CRC-8 checked; open-drain sharing of one pin |
 | `manchester_link` | two engines over a wire | 8 bytes (all zeros, all ones, alternating, single bits), recovered with no bit timer; the line only ever changes at half-bit and full-bit spacing |
 | `ir_remote_nec` | envelope decoder for a carrier-modulated pin | 50% duty carrier; NEC leader, 32 bits and inverted-byte checks decode to the sent address and command |
+| `swd_debug_port` | ARM SW-DP model: JTAG-to-SWD select, line reset, request parity, ACK, turnarounds, DP registers | IDCODE 0x2BA01477 read; CTRL/STAT power-up written (parity checked by the target) and its acknowledge read back |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 
 ## 4. Gate level

@@ -289,3 +289,90 @@ class Ds18b20:
                             state = 'done'
                         rx_bits, rx_byte = 0, 0
             prev = lvl
+
+
+class SwdTarget:
+    """ARM SW-DP (as in an STM32): JTAG-to-SWD select, line reset, DP register reads and writes.
+    Samples SWDIO on rising SWCLK; drives it (push-pull) right after a rising edge."""
+
+    def __init__(self, bus, swdio, swclk, idcode=0x2BA01477):
+        self.bus, self.io, self.ck = bus, swdio, swclk
+        self.regs = {0x0: idcode, 0x4: 0, 0x8: 0, 0xC: 0}
+        self.log = []                      # ('swd',) ('reset',) ('R'|'W', addr, data)
+        cocotb.start_soon(self._run())
+
+    def _drive(self, v):
+        if v is None:
+            self.bus.dev_drive.pop(self.io, None)
+        else:
+            self.bus.dev_drive[self.io] = v
+
+    async def _run(self):
+        d = self.bus.dut
+        prev = 0
+        shift16, ones = 0, 0
+        swd, armed = False, False
+        state, bits, n, req, plan = 'idle', 0, 0, 0, []
+        while True:
+            await FallingEdge(d.clk)
+            ck = self.bus.get(self.ck)
+            rise = ck and not prev
+            prev = ck
+            if not rise:
+                continue
+            b = self.bus.get(self.io)
+            if plan:                       # a transaction in progress: one action per edge
+                act = plan.pop(0)
+                if act[0] == 'drive':
+                    self._drive(act[1])
+                elif act[0] == 'take':     # sample a data bit written by the host
+                    bits |= b << n
+                    n += 1
+                    data, p = bits & 0xFFFFFFFF, bits >> 32 & 1
+                    if n == 33 and p == bin(data).count('1') & 1:
+                        addr = act[1]
+                        self.regs[addr] = data
+                        if addr == 0x4:    # power-up requests are acknowledged at once
+                            self.regs[4] = data | (data << 1 & 0xA0000000)
+                        self.log.append(('W', addr, data))
+                if not plan:
+                    state = 'idle'
+                continue
+            ones = ones + 1 if b else 0
+            shift16 = (shift16 >> 1 | b << 15) & 0xFFFF
+            if shift16 == 0xE79E:
+                swd, armed = True, False
+                self.log.append(('swd',))
+            if ones >= 50:
+                if swd and not armed:
+                    self.log.append(('reset',))
+                armed, state = swd, 'idle'
+                continue
+            if not armed:
+                continue
+            if state == 'idle':
+                if b:
+                    state, req, n = 'req', 1, 1
+            elif state == 'req':
+                req |= b << n
+                n += 1
+                if n == 8:
+                    ap, rnw, a = req >> 1 & 1, req >> 2 & 1, (req >> 3 & 3) << 2
+                    ok = (req >> 5 & 1) == (ap + rnw + (a >> 2 & 1) + (a >> 3 & 1)) & 1 \
+                        and not req >> 6 & 1 and req >> 7 & 1 and not ap
+                    if not ok:                 # no answer: the line stays released
+                        state = 'idle'
+                        continue
+                    ack = [('drive', v) for v in (1, 0, 0)]
+                    plan = [('trn',)] + ack
+                    if rnw:
+                        data = self.regs[a]
+                        if a == 0xC:
+                            data = self.regs[0x4]
+                        self.log.append(('R', a, data))
+                        plan += [('drive', data >> i & 1) for i in range(32)]
+                        plan += [('drive', bin(data).count('1') & 1), ('drive', None)]
+                    else:
+                        bits, n = 0, 0
+                        plan += [('drive', None)] + [('take', a)] * 33
+                    state = 'busy'

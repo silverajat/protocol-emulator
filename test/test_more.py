@@ -164,3 +164,46 @@ async def ir_remote_nec(dut):
             pairs.append((mark, round((b - a) / period - 1.5)))   # last cycle + out = 1.5 periods
             start = b
     assert nec_decode(pairs) == (0x5A, 0xC3), pairs[:4]
+
+
+@cocotb.test()
+async def swd_debug_port(dut):
+    """ARM SWD: switch the target from JTAG to SWD, read the DP IDCODE (an STM32's 0x2BA01477),
+    request debug power-up and read it acknowledged; one wire that turns around mid-transaction."""
+    from devices import SwdTarget
+    from pemu import swd
+    SWDIO, SWCLK = 0, 1
+    chip = await setup(dut)
+    bus = PinBus(dut, chip)
+    target = SwdTarget(bus, SWDIO, SWCLK)
+    p = prog('swd', 0)
+    await chip.load(0, EngineConfig(clkdiv=3, serial=True, clk=True, clk_pin=SWCLK, out_base=SWDIO,
+                                    out_cnt=1, set_base=SWDIO, set_cnt=2, in_base=SWDIO,
+                                    out_shr=True, in_shr=True), p)
+    await chip.write(R.CTRL, 0x11)
+
+    async def xfer(words, nret):
+        for w in words:
+            while (await chip.read(R.STATUS)) >> 3 & 1:
+                await ClockCycles(dut.clk, 50)
+            await chip.write(R.TXF(0), w)
+        out = []
+        for _ in range(nret):
+            for _ in range(200):
+                if not (await chip.read(R.STATUS)) & 1:
+                    break
+                await ClockCycles(dut.clk, 100)
+            else:
+                raise AssertionError(f'no reply; target {target.log}')
+            out.append(await chip.read(R.RXF(0)))
+        return out
+
+    host = swd.Swd(p.labels, xfer)
+    await host.seq(swd.JTAG_TO_SWD)
+    ack, idcode = await host.read(0, swd.DP_IDCODE)
+    assert ack == swd.ACK_OK and idcode == 0x2BA01477, (ack, hex(idcode or 0), target.log)
+    assert await host.write(0, swd.DP_CTRLSTAT, 0x50000000) == swd.ACK_OK
+    ack, stat = await host.read(0, swd.DP_CTRLSTAT)
+    assert ack == swd.ACK_OK and stat == 0xF0000000, hex(stat or 0)   # CSYS/CDBG PWRUPACK set
+    assert target.log[:2] == [('swd',), ('reset',)], target.log
+    assert ('W', 0x4, 0x50000000) in target.log

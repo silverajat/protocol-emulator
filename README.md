@@ -28,6 +28,7 @@ The engines know nothing about any protocol. They offer generic pieces (shift re
 | `ws2812.pio` | 6 | WS2812 / NeoPixel LED strips (pulse-width coded bits) |
 | `onewire.pio` | 21 | 1-Wire master: reset/presence, read and write slots (DS18B20 temperature sensor) |
 | `manchester_tx.pio` / `manchester_rx.pio` | 12 / 12 | Manchester line coding; the receiver recovers the clock from the data |
+| `swd.pio` | 28 | ARM Serial Wire Debug host (reads a Cortex-M's debug port) |
 | `ir_tx.pio` | 7 | IR remote, 38 kHz carrier, any mark/space protocol (NEC encoder in `sw/pemu/ir.py`) |
 
 The bench's three programs together fill the 64-word program memory exactly, and run at the same time.

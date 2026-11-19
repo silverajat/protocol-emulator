@@ -53,10 +53,11 @@ Details: [ISA.md](ISA.md). In short, an engine executes one instruction per tick
 | `onewire.pio` | 21 | 1-Wire master (DS18B20) |
 | `manchester_tx.pio` / `manchester_rx.pio` | 12 / 12 | Manchester (IEEE 802.3 coding, as DALI and 10BASE-T): the receiver recovers the clock from the data, no bit timer |
 | `ir_tx.pio` | 7 | IR remote on a 38 kHz carrier: any mark/space protocol; NEC encoder on the host |
+| `swd.pio` | 28 | ARM Serial Wire Debug host: reads a Cortex-M's debug port (STM32 IDCODE), one wire that turns around inside every transaction |
 
 ### Flexibility: protocols added after the hardware was finished
 
-Four protocols were written after the RTL was done, without touching it, each needing something different: WS2812 needs pulse-width coding; 1-Wire needs open-drain time slots with the master and the device sharing one wire; Manchester needs the clock recovered from the data (the receiver waits 3/4 of a bit after each mid-bit edge, so it never mistakes an edge between bits for data); the IR remote needs a 38 kHz carrier gated by marks and spaces, with the protocol itself (NEC) left on the host. All pass against models in `test/test_more.py`. **[Gate 6: more after the freeze, e.g. DMX512, SWD, LIN.]**
+Five protocols were written after the RTL was done, without touching it, each needing something different: WS2812 needs pulse-width coding; 1-Wire needs open-drain time slots with the master and the device sharing one wire; Manchester needs the clock recovered from the data (the receiver waits 3/4 of a bit after each mid-bit edge, so it never mistakes an edge between bits for data); the IR remote needs a 38 kHz carrier gated by marks and spaces, with the protocol itself (NEC) left on the host; SWD needs one data wire that changes direction twice inside a transaction, with a clock cycle for each turnaround (the chip can read and write an ARM microcontroller's debug port). All pass against models in `test/test_more.py`. **[Gate 6: SWD against a real STM32 on the bench; more after the freeze, e.g. DMX512, LIN.]**
 
 ## 5. The rover drive-train bench **[after the bench]**
 
