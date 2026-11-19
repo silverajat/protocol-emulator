@@ -1,0 +1,24 @@
+; UART receiver, 8N1, LSB first.
+; Timing comes from the bit timer, locked to the bus by every falling edge:
+; BT_PERIOD = clk / baud, BT_POINT = BT_PERIOD / 2 (middle of the bit),
+; RESYNC_PIN = IN_BASE = JMP_PIN = the RX pin, RESYNC_EDGE = falling, IN_SHR = 1.
+; Host: read bytes from RXF (bits [7:0]). Event 0 is set on a framing error.
+.program uart_rx
+    wait 1, pin, 0          ; wait for the idle level first (the line may start low)
+.wrap_target
+start:
+    wait 0, pin, 0          ; start bit edge (also resyncs the bit timer)
+    nop.p                   ; middle of the start bit
+    set x, 7
+bit:
+    in.p pins, 1            ; middle of each data bit
+    jmp x--, bit
+    jmp.p pin, good         ; middle of the stop bit
+    evset 0                 ; framing error: flag it, drop the byte
+    mov isr, null
+    wait 1, pin, 0
+    jmp start
+good:
+    in null, 24             ; move the byte down to bits [7:0]
+    push block
+.wrap

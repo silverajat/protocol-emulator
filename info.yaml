@@ -18,7 +18,10 @@ project:
   # Don't forget to also update `PROJECT_SOURCES` in test/Makefile.
   source_files:
     - "project.v"
-    - "hello_uart.v"
+    - "host_spi.v"
+    - "pe_core.v"
+    - "pe_engine.v"
+    - "pe_fifo.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
 # This section is for the datasheet/website. Use descriptive names (e.g., RX, TX, MOSI, SCL, SEG_A, etc.).
@@ -36,7 +39,7 @@ pinout:
   # Outputs
   uo[0]: "host MISO"
   uo[1]: "host IRQ"
-  uo[2]: "gp_out0 (Gate 0: UART TX)"
+  uo[2]: "gp_out0"
   uo[3]: "gp_out1"
   uo[4]: "gp_out2"
   uo[5]: "gp_out3"

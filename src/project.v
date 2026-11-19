@@ -2,51 +2,51 @@
  * Copyright (c) 2026 Rajat Gupta
  * SPDX-License-Identifier: Apache-2.0
  *
- * Protocol emulator chip: top level.
+ * Protocol emulator chip: top level. See docs/ISA.md.
  *
- * Pin plan (fixed from Gate 0 so the board wiring never changes):
- *   ui_in[0]  host SCK   (Gate 1: program loading over SPI)
- *   ui_in[1]  host CS_n
- *   ui_in[2]  host MOSI
- *   ui_in[7:3] general-purpose inputs
- *   uo_out[0] host MISO
- *   uo_out[1] host IRQ (data ready)
- *   uo_out[7:2] general-purpose outputs
- *   uio[7:0]  general-purpose bidirectional pins (push-pull or open-drain)
- *
- * Gate 0: only a fixed UART transmitter on uo_out[2]. Everything else is idle.
+ *   ui_in[0]  host SCK        uo_out[0] host MISO
+ *   ui_in[1]  host CS_n       uo_out[1] host IRQ (event flag 3)
+ *   ui_in[2]  host MOSI       uo_out[7:2] general outputs (output space 8-13)
+ *   ui_in[7:3] general inputs (input space 8-12)
+ *   uio[7:0]  general bidirectional pins (space 0-7), push-pull or open-drain
  */
 
 `default_nettype none
 
-module tt_um_silverajat_protoemu #(
-    parameter integer CLK_HZ = 60_000_000   // the FPGA harness overrides this (27 MHz on the LED board)
-) (
-    input  wire [7:0] ui_in,    // Dedicated inputs
-    output wire [7:0] uo_out,   // Dedicated outputs
-    input  wire [7:0] uio_in,   // IOs: Input path
-    output wire [7:0] uio_out,  // IOs: Output path
-    output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // always 1 when the design is powered, so you can ignore it
-    input  wire       clk,      // clock
-    input  wire       rst_n     // reset_n - low to reset
+module tt_um_silverajat_protoemu (
+    input  wire [7:0] ui_in,
+    output wire [7:0] uo_out,
+    input  wire [7:0] uio_in,
+    output wire [7:0] uio_out,
+    output wire [7:0] uio_oe,
+    input  wire       ena,
+    input  wire       clk,
+    input  wire       rst_n
 );
 
-  wire uart_tx;
+  wire [6:0]  bus_addr;
+  wire [31:0] bus_wdata, bus_rdata;
+  wire        bus_we, bus_re;
+  wire        miso, irq;
+  wire [5:0]  uo_gp;
 
-  hello_uart #(
-      .CLK_HZ(CLK_HZ),
-      .BAUD  (115_200)
-  ) u_hello (
-      .clk  (clk),
-      .rst_n(rst_n),
-      .tx   (uart_tx)
+  host_spi u_host (
+      .clk(clk), .rst_n(rst_n),
+      .sck(ui_in[0]), .cs_n(ui_in[1]), .mosi(ui_in[2]), .miso(miso),
+      .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_we(bus_we), .bus_re(bus_re),
+      .bus_rdata(bus_rdata)
   );
 
-  assign uo_out  = {5'b0, uart_tx, 2'b0};   // uo_out[2] = UART TX; host pins idle low for now
-  assign uio_out = 8'b0;
-  assign uio_oe  = 8'b0;                    // all bidirectional pins are inputs in Gate 0
+  pe_core u_core (
+      .clk(clk), .rst_n(rst_n),
+      .ui_in(ui_in), .uo_gp(uo_gp),
+      .uio_in(uio_in), .uio_out(uio_out), .uio_oe(uio_oe), .irq(irq),
+      .bus_addr(bus_addr), .bus_wdata(bus_wdata), .bus_we(bus_we), .bus_re(bus_re),
+      .bus_rdata(bus_rdata)
+  );
 
-  wire _unused = &{ena, ui_in, uio_in, 1'b0};
+  assign uo_out = {uo_gp, irq, miso};
+
+  wire _unused = &{ena, 1'b0};
 
 endmodule
