@@ -6,6 +6,8 @@
     python sw/pe.py uart "hello rover"    engine 0 sends UART, engine 1 receives it, text comes back
     python sw/pe.py can                   two engines run the CAN program as two nodes on a one-wire
                                           bus: put a jumper between J3 pins 9 and 10 (uio6, uio7)
+    python sw/pe.py swd                   read an ARM microcontroller's debug ID over SWD: J3 pin 3
+                                          (uio0) to SWDIO, pin 4 (uio1) to SWCLK, GND to GND
     python sw/pe.py peek 0x05             read a register
     python sw/pe.py poke 0x07 0           write a register
 
@@ -129,6 +131,43 @@ def cmd_can(h, args, bitrate=500_000):
     return False
 
 
+def cmd_swd(h, args):
+    import asyncio
+    from pemu import swd
+    p = program('swd', 0)
+    h.write(R.CTRL, 0)
+    h.load(0, EngineConfig(clkdiv=7, serial=True, clk=True, clk_pin=1, out_base=0, out_cnt=1,
+                           set_base=0, set_cnt=2, in_base=0, out_shr=True, in_shr=True), p)
+    h.write(R.CTRL, 0x11)
+
+    async def xfer(words, nret):
+        h.send(0, words)
+        out = []
+        for _ in range(200):
+            out += h.recv(0, nret - len(out))
+            if len(out) == nret:
+                break
+        else:
+            raise SystemExit('the SWD engine did not answer (check the board link with `id`)')
+        return out
+
+    async def run():
+        host = swd.Swd(p.labels, xfer)
+        await host.seq(swd.JTAG_TO_SWD)
+        ack, idcode = await host.read(0, swd.DP_IDCODE)
+        if ack != swd.ACK_OK:
+            print(f'no SWD target answered (ACK {ack:03b}); check SWDIO/SWCLK/GND and target power')
+            return False
+        print(f'DP IDCODE 0x{idcode:08x}' + ('  (Cortex-M3/M4 SW-DP, e.g. STM32F1/F4)' if idcode == 0x2BA01477
+                                             else '  (Cortex-M0+ SW-DP, e.g. STM32G0/L0, RP2040)' if idcode in (0x0BC11477, 0x0BC12477) else ''))
+        await host.write(0, swd.DP_CTRLSTAT, 0x50000000)
+        ack, stat = await host.read(0, swd.DP_CTRLSTAT)
+        up = stat is not None and stat >> 29 & 5 == 5
+        print(f'debug power-up {"acknowledged" if up else "NOT acknowledged"} (CTRL/STAT 0x{stat or 0:08x})')
+        return up
+    return asyncio.run(run())
+
+
 def cmd_peek(h, args):
     print(f'0x{h.read(int(args.addr, 0)):08x}')
     return True
@@ -150,6 +189,7 @@ def main():
     u.add_argument('text', nargs='?', default='hello rover')
     c = sub.add_parser('can')
     c.add_argument('text', nargs='?', default='rover!')
+    sub.add_parser('swd')
     p = sub.add_parser('peek')
     p.add_argument('addr')
     p = sub.add_parser('poke')

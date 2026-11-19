@@ -51,3 +51,7 @@ Use the motor's real CAN ID (`--motor`). The drive motors are AK80-8 (`--model A
 ## 4. For the video while you're there
 
 Film: the lifted wheel turning; the board and its wires; the laptop terminal printing frames, then the plot (`python sw/plot_bench.py`); about 30 s of each, in landscape. Photos of the wiring help the write-up too.
+
+## 5. Bonus, any time (no rover needed): debug an STM32 over SWD
+
+Any STM32 board (Nucleo, Blue Pill): J3 pin 3 (uio0) to SWDIO, pin 4 (uio1) to SWCLK, GND to GND; power the STM32 from its own USB. Then `python sw/pe.py swd`. Expect `DP IDCODE 0x2ba01477` (F1/F4) or `0x0bc11477` (G0/L0) and `debug power-up acknowledged`. That's a protocol written after the chip was finished, talking to real ARM silicon: worth 10 s of the video.
