@@ -158,8 +158,12 @@ def cmd_swd(h, args):
         if ack != swd.ACK_OK:
             print(f'no SWD target answered (ACK {ack:03b}); check SWDIO/SWCLK/GND and target power')
             return False
-        print(f'DP IDCODE 0x{idcode:08x}' + ('  (Cortex-M3/M4 SW-DP, e.g. STM32F1/F4)' if idcode == 0x2BA01477
-                                             else '  (Cortex-M0+ SW-DP, e.g. STM32G0/L0, RP2040)' if idcode in (0x0BC11477, 0x0BC12477) else ''))
+        known = {0x2BA01477: 'Cortex-M3/M4 SW-DP (STM32F1/F3/F4/L4...)',
+                 0x5BA02477: 'Cortex-M7 SW-DP (STM32F7/H7)',
+                 0x0BC11477: 'Cortex-M0/M0+ SW-DP (STM32F0/G0/L0/C0)',
+                 0x0BC12477: 'Cortex-M0+ SW-DP v2 (RP2040)',
+                 0x0BE12477: 'Cortex-M33 SW-DP (STM32L5/U5/H5)'}
+        print(f'DP IDCODE 0x{idcode:08x}  {known.get(idcode, "(an ARM debug port)")}')
         await host.write(0, swd.DP_CTRLSTAT, 0x50000000)
         ack, stat = await host.read(0, swd.DP_CTRLSTAT)
         up = stat is not None and stat >> 29 & 5 == 5
