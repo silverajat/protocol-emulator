@@ -43,7 +43,12 @@ VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 
 # List test modules to run, separated by commas and without the .py suffix:
+ifneq ($(GATES),yes)
 COCOTB_TEST_MODULES = test,test_buses,test_can,test_bench,test_diff
+else
+# gate level: the host port, UART, and the whole bench (CAN + I2C + SPI at once)
+COCOTB_TEST_MODULES = test,test_bench
+endif
 
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim

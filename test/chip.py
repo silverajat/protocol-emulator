@@ -41,7 +41,7 @@ class Chip:
         self.dut.uio_in.value = self.uio
 
     def uo(self, i):
-        return (int(self.dut.uo_out.value) >> i) & 1
+        return int(self.dut.uo_out.value[i])      # just this bit (others may be X on gates)
 
     def set_ui(self, i, v):
         b = i - 3

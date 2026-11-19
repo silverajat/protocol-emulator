@@ -68,6 +68,8 @@ async def host_port_id_and_registers(dut):
     assert await chip.read(R.EVENTS) == 0x5
     await chip.write(R.PIN_OD, 0xFFFF)
     assert await chip.read(R.PIN_OD) == 0x3FFF                # 14 pins
+    await chip.write(R.IMEM_ADDR, 0)
+    await chip.write(R.IMEM_DATA, [0] * 64)                    # jmp 0 everywhere: safe to enable
     await chip.write(R.CTRL, 0xF)
     assert await chip.read(R.CTRL) == 0x7                     # 3 engines
     await chip.write(R.CTRL, 0)
