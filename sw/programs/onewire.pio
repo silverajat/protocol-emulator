@@ -1,0 +1,37 @@
+; 1-Wire master (Dallas/Maxim, e.g. the DS18B20 temperature sensor), standard speed.
+; Config: OUT, SET and IN windows = the data pin (open-drain, PIN_OD, with a ~4.7 kohm pull-up),
+;         OUT_SHR 1, IN_SHR 1 (LSB first), AUTOPUSH with PUSH_THRESH 8;
+;         tick = 2 us: CLKDIV = clock / 500 kHz - 1 (119 at 60 MHz).
+; Host words (shifted out LSB first): [5:0] = step address (from the assembler's labels),
+; then the step's data:
+;   reset   reset pulse + presence: returns one word, bit 0 = 0 when a device answered
+;   byte    [13:6] = byte to send, LSB first; returns the byte read back in bits [31:24]
+;           (send 0xFF to read a byte: the device pulls the line low for its 0 bits)
+.program onewire
+.wrap_target
+top:
+    pull block
+    out pc, 6               ; jump to the requested step
+reset:
+    set pins, 0             ; reset pulse: 2 + 32 x 16 us = 514 us low
+    set x, 31
+lo: jmp x--, lo [7]
+    set pins, 1 [7]         ; release; devices answer 15-60 us later for 60-240 us
+    set x, 2
+w1: jmp x--, w1 [7]         ; sample about 66 us after the release
+    in pins, 1              ; 0 = a device is present
+    set x, 26
+w2: jmp x--, w2 [7]         ; rest of the 480 us recovery
+    push align
+    jmp top
+byte:
+    set y, 7
+bit:
+    set pins, 0             ; start the slot: 2 us low
+    out pins, 1 [5]         ; a 1 releases the line now, a 0 keeps it low (12 us)
+    in pins, 1 [7]          ; sample at 14 us (the device may hold it low for a 0)
+    nop [7]
+    nop [7]
+    set pins, 1 [2]         ; a 0 ends after 62 us; 6 us recovery
+    jmp y--, bit
+.wrap

@@ -203,3 +203,89 @@ class Mcp3208:
                 else:
                     self.bus.dev_drive[self.miso] = 0
             sck_p = sck
+
+
+def crc8_maxim(data):
+    crc = 0
+    for b in data:
+        for _ in range(8):
+            mix = (crc ^ b) & 1
+            crc >>= 1
+            if mix:
+                crc ^= 0x8C
+            b >>= 1
+    return crc
+
+
+class Ds18b20:
+    """DS18B20 temperature sensor on a 1-Wire bus (open-drain pin, pull-up in PinBus).
+    Supports reset/presence, SKIP ROM (0xCC), CONVERT T (0x44), READ SCRATCHPAD (0xBE)."""
+
+    def __init__(self, bus, pin, temp_c=23.5, clk_mhz=60):
+        self.bus, self.pin, self.us = bus, pin, clk_mhz
+        self.raw = int(round(temp_c * 16)) & 0xFFFF
+        self.log = []
+        cocotb.start_soon(self._run())
+
+    def scratchpad(self):
+        s = [self.raw & 0xFF, self.raw >> 8, 0x4B, 0x46, 0x7F, 0xFF, 0x0C, 0x10]
+        return s + [crc8_maxim(s)]
+
+    def _pull(self, low):
+        if low:
+            self.bus.dev_low |= 1 << self.pin
+        else:
+            self.bus.dev_low &= ~(1 << self.pin)
+
+    async def _run(self):
+        d, us = self.bus.dut, self.us
+        t = 0
+        prev = 1
+        fall = None
+        rx_bits, rx_byte = 0, 0
+        tx = []                    # bits to send
+        hold_until = None
+        presence = None            # (start, end)
+        sample_at = None
+        state = 'idle'
+        while True:
+            await FallingEdge(d.clk)
+            t += 1
+            lvl = self.bus.get(self.pin)
+            if presence:
+                self._pull(presence[0] <= t < presence[1])
+                if t >= presence[1]:
+                    presence = None
+            if hold_until is not None and t >= hold_until:
+                self._pull(False)
+                hold_until = None
+            if prev == 1 and lvl == 0 and not (self.bus.dev_low >> self.pin & 1):
+                fall = t                                   # the master started a slot or a reset
+                if state in ('rom', 'func') or not tx:
+                    sample_at = t + 30 * us
+                elif tx:
+                    bit = tx.pop(0)
+                    if bit == 0:
+                        self._pull(True)
+                        hold_until = t + 45 * us
+            if prev == 0 and lvl == 1 and fall is not None and t - fall > 400 * us:
+                self.log.append('reset')
+                fall = None
+                presence = (t + 30 * us, t + 150 * us)
+                state, rx_bits, rx_byte, tx, sample_at = 'rom', 0, 0, [], None
+            if sample_at is not None and t == sample_at:
+                sample_at = None
+                if state in ('rom', 'func'):
+                    rx_byte |= lvl << rx_bits
+                    rx_bits += 1
+                    if rx_bits == 8:
+                        self.log.append(rx_byte)
+                        if state == 'rom' and rx_byte == 0xCC:
+                            state = 'func'
+                        elif state == 'func' and rx_byte == 0xBE:
+                            tx = [(b >> i) & 1 for b in self.scratchpad() for i in range(8)]
+                            state = 'send'
+                        elif state == 'func' and rx_byte == 0x44:
+                            state = 'done'
+                        rx_bits, rx_byte = 0, 0
+            prev = lvl

@@ -1,0 +1,15 @@
+; WS2812 / NeoPixel LED strip: 800 kbit/s, one bit = 1.25 us, a 1 is a long high pulse and a 0 a
+; short one. 24 bits per LED (green, red, blue, MSB first).
+; Config: OUT and SET windows = the data pin, AUTOPULL with PULL_THRESH 24, OUT_SHR 0;
+;         10 ticks per bit: CLKDIV = clock / 8 MHz - 1 (7 at 60 MHz).
+; Host: push one word per LED, 0xGGRRBB00 (the colour in the top 24 bits). When the FIFO runs dry
+;       the line stays low, which latches the strip.
+.program ws2812
+    set pins, 0             ; outputs come out of reset high: start low
+    set pindirs, 1
+.wrap_target
+    out x, 1                ; next bit (waits here, line low, when there is no data)
+    set pins, 1 [2]         ; high: 3 ticks for a 0 ...
+    mov pins, x [2]         ; ... 6 ticks for a 1
+    set pins, 0 [2]         ; low for the rest of the 10 ticks
+.wrap

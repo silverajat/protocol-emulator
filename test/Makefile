@@ -44,7 +44,7 @@ TOPLEVEL = tb
 
 # List test modules to run, separated by commas and without the .py suffix:
 ifneq ($(GATES),yes)
-COCOTB_TEST_MODULES = test,test_buses,test_can,test_bench,test_diff
+COCOTB_TEST_MODULES = test,test_buses,test_can,test_bench,test_more,test_diff
 else
 # gate level: the host port, UART, and the whole bench (CAN + I2C + SPI at once)
 COCOTB_TEST_MODULES = test,test_bench
