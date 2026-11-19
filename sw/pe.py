@@ -68,9 +68,9 @@ def cmd_uart(h, args, baud=115200):
     rx = program('uart_rx', len(tx))
     bit = round(CLK_HZ / baud)
     h.write(R.CTRL, 0)
-    h.load(0, EngineConfig(clkdiv=round(CLK_HZ / (8 * baud)) - 1, out_base=R.uo(2), out_cnt=1,
-                           set_base=R.uo(2), set_cnt=1, out_shr=True), tx)
-    h.load(1, EngineConfig(in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True, resync_pin=R.ui(3),
+    h.load(0, EngineConfig(serial=True, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1,
+                           out_shr=True, bt_period=bit, bt_point=bit // 2), tx)
+    h.load(1, EngineConfig(serial=True, in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True, resync_pin=R.ui(3),
                            resync_edge=1, bt_period=bit, bt_point=bit // 2), rx)
     h.write(R.CTRL, 0x33)
     got = bytearray()

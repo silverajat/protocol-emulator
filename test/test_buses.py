@@ -20,29 +20,36 @@ INA_REGS = {0x3E: 0x5449, 0x3F: 0x2281, 0x05: 0x1234, 0x06: 0x0BB8}   # mfr id, 
 
 
 def i2c_cfg():
-    return EngineConfig(clkdiv=1, out_base=SDA, out_cnt=1, set_base=SCL, set_cnt=1, in_base=SDA)
+    return EngineConfig(clkdiv=1, serial=True, clk=True, clk_pin=SCL, duplex=True, stretch=True,
+                        out_base=SDA, out_cnt=1, set_base=SCL, set_cnt=1, in_base=SDA)
 
 
 def spi_cfg():
-    return EngineConfig(set_base=SCK, set_cnt=2, out_base=MOSI, out_cnt=1, in_base=MISO)
+    return EngineConfig(clkdiv=1, serial=True, clk=True, clk_pin=SCK, duplex=True,
+                        set_base=SCK, set_cnt=3, out_base=MOSI, out_cnt=1, in_base=MISO)
 
 
-START, STOP = 1 << 31, 1 << 30
+I2C = prog('i2c_master', origin=0)       # the host needs its step addresses
+
+
+def step(name, nine=0):
+    return (I2C.labels[name] << 26) | (nine << 17)
 
 
 def wr(b, start=False, stop=False):
-    return (START if start else 0) | (STOP if stop else 0) | (((b << 1) | 1) << 21)
+    return [step('start' if start else 'byte', (b << 1) | 1)] + ([step('stop')] if stop else [])
 
 
 def rd(nack=False, stop=False):
-    return (STOP if stop else 0) | (((0xFF << 1) | int(nack)) << 21)
+    return [step('byte', (0xFF << 1) | int(nack))] + ([step('stop')] if stop else [])
 
 
 async def i2c(chip, engine, cmds):
-    """Run I2C command words; return the nine-bit replies."""
+    """Run I2C steps (lists of words); return the nine-bit replies of the byte steps."""
     out = []
-    for c in cmds:
-        await chip.write(R.TXF(engine), c)
+    for words in cmds:
+        for c in words:
+            await chip.write(R.TXF(engine), c)
         while True:
             st = await chip.read(R.STATUS)
             if not (st >> (4 * engine)) & 1:
@@ -63,9 +70,8 @@ async def setup_bench(dut, stretch=0):
     bus = PinBus(dut, chip)
     ina = I2cRegDevice(bus, SDA, SCL, INA_ADDR, INA_REGS, width=2, stretch=stretch)
     adc = Mcp3208(bus, SCK, CS, MOSI, MISO, [100 * (i + 1) + 7 for i in range(8)])
-    i2c_p = prog('i2c_master', origin=0)
-    spi_p = prog('spi_master', origin=len(i2c_p))
-    await chip.load(0, i2c_cfg(), i2c_p)
+    spi_p = prog('spi_master', origin=len(I2C))
+    await chip.load(0, i2c_cfg(), I2C)
     await chip.load(1, spi_cfg(), spi_p)
     await chip.write(R.PIN_OD, (1 << SDA) | (1 << SCL))
     await chip.write(R.CTRL, 0x33)
@@ -107,7 +113,8 @@ async def i2c_clock_stretching(dut):
 
 
 async def spi_xfer(chip, engine, nbits, data):
-    await chip.write(R.TXF(engine), [nbits - 1, data << (32 - nbits)])
+    assert nbits == 24, 'spi_master.pio is assembled for 24-bit transfers'
+    await chip.write(R.TXF(engine), data << (32 - nbits))
     while True:
         st = await chip.read(R.STATUS)
         if not (st >> (4 * engine)) & 1:
@@ -135,7 +142,7 @@ async def i2c_and_spi_at_once(dut):
     """Both masters run at the same time on different engines and pins."""
     chip, bus, ina, adc = await setup_bench(dut)
     await chip.write(R.TXF(0), wr(INA_ADDR << 1, start=True))
-    await chip.write(R.TXF(1), [23, mcp3208_cmd(5) << 8])
+    await chip.write(R.TXF(1), mcp3208_cmd(5) << 8)
     await chip.write(R.TXF(0), wr(0x05))
     await ClockCycles(dut.clk, 2000)
     st = await chip.read(R.STATUS)

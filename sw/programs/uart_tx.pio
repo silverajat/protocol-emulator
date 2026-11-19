@@ -1,16 +1,13 @@
-; UART transmitter, 8 data bits, no parity, 1 stop bit, LSB first.
-; Timing comes from the clock divider: 8 ticks per bit, so CLKDIV = clk / (8 * baud) - 1.
-; Config: OUT and SET windows = the TX pin (count 1), OUT_SHR = 1.
+; UART transmitter, 8N1, LSB first, timed by the bit timer.
+; Config: SERIAL, OUT and SET windows = the TX pin, OUT_SHR, BT_PERIOD = clock / baud
+;         (BT_POINT anywhere inside the bit, e.g. the middle).
 ; Host: write each byte to TXF (bits [7:0]).
 .program uart_tx
-    set pins, 1             ; idle high
-    set pindirs, 1          ; drive the pin (needed on uio pins)
+    set pindirs, 1          ; drive the pin (needed on uio pins; the line idles high from reset)
 .wrap_target
     pull block              ; wait for a byte
-    set x, 7
-    set pins, 0 [7]         ; start bit, 8 ticks
-bit:
-    out pins, 1 [6]
-    jmp x--, bit            ; 8 ticks per data bit
-    set pins, 1 [5]         ; stop bit: 6 + pull + set x = 8 ticks
+    nop.p                   ; wait for a sample point: drops a stale bit-start tick
+    set.p pins, 0           ; start bit, on a bit boundary
+    out.p pins, 8           ; eight data bits, one per bit time
+    set.p pins, 1           ; stop bit
 .wrap

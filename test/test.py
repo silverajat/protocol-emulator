@@ -48,14 +48,13 @@ async def uart_send(chip, ui_pin, data, bit=BIT, stop=1):
 
 
 def tx_cfg(pin_out, bit=BIT):
-    # 8 ticks per bit: CLKDIV + 1 = bit / 8
-    return EngineConfig(clkdiv=bit // 8 - 1, out_base=pin_out, out_cnt=1, set_base=pin_out, set_cnt=1,
-                        out_shr=True)
+    return EngineConfig(serial=True, out_base=pin_out, out_cnt=1, set_base=pin_out, set_cnt=1,
+                        out_shr=True, bt_period=bit, bt_point=bit // 2)
 
 
 def rx_cfg(pin_in, bit=BIT):
-    return EngineConfig(in_base=pin_in, jmp_pin=pin_in, in_shr=True, resync_pin=pin_in, resync_edge=1,
-                        bt_period=bit, bt_point=bit // 2)
+    return EngineConfig(serial=True, in_base=pin_in, jmp_pin=pin_in, in_shr=True, resync_pin=pin_in,
+                        resync_edge=1, bt_period=bit, bt_point=bit // 2)
 
 
 # ---------------- tests ----------------

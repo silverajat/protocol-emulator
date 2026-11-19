@@ -7,20 +7,21 @@ Syntax (close to RP2040 PIO assembly):
     .define BAUD_DIV 64  constant usable in operands
     .wrap_target         WRAP_BOT
     .wrap                WRAP_TOP (the instruction before it)
+    .entry               where the engine starts (default: the first instruction)
     label:
     out pins, 1 [6]      delay in square brackets
     out.p pins, 1        '.p' suffix (or a 'paced' word) sets the pace bit
 
 Instructions:
-    jmp [!x|x--|!y|y--|x!=y|pin|!osre,] target
+    jmp [!x|x--|txrdy|y--|x!=y|pin|!osre,] target
     wait 0|1, gpio|pin|event, idx
     in   pins|x|y|null|time|crc|isr|osr, n
     out  pins|x|y|null|pindirs|pc|isr|crc, n
-    push [iffull] [block|noblock]
+    push [iffull] [block|noblock] [align]
     pull [ifempty] [block|noblock]
     mov  pins|x|y|pindirs|pc|isr|osr, [~|!|::]src
     set  pins|x|y|pindirs|crc, value
-    nop | crctap off|out|in|both | stuff off|out|in|both | evset n | evclr n
+    nop | crctap off|out|in|both | frame off|out|in|both | evset n | evclr n
 
 Jump targets are absolute addresses in the shared program memory, so a program is
 assembled for the origin it will be loaded at (Program.origin).
@@ -30,14 +31,14 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-JMP_COND = {'': 0, 'always': 0, '!x': 1, 'x--': 2, '!y': 3, 'y--': 4, 'x!=y': 5, 'pin': 6, '!osre': 7}
+JMP_COND = {'': 0, 'always': 0, '!x': 1, 'x--': 2, 'txrdy': 3, 'y--': 4, 'x!=y': 5, 'pin': 6, '!osre': 7}
 SRC = {'pins': 0, 'x': 1, 'y': 2, 'null': 3, 'time': 4, 'crc': 5, 'isr': 6, 'osr': 7}
 OUT_DST = {'pins': 0, 'x': 1, 'y': 2, 'null': 3, 'pindirs': 4, 'pc': 5, 'isr': 6, 'crc': 7}
 MOV_DST = {'pins': 0, 'x': 1, 'y': 2, 'pindirs': 3, 'pc': 5, 'isr': 6, 'osr': 7}
 SET_DST = {'pins': 0, 'x': 1, 'y': 2, 'pindirs': 3, 'crc': 4}
 WAIT_SRC = {'gpio': 0, 'pin': 1, 'event': 2, 'irq': 2}
 TAP = {'off': 0, 'out': 1, 'in': 2, 'both': 3}
-STUFF = {'off': 0, 'out': 1, 'in': 2, 'both': 3, 'on': 3}
+FRAME = {'off': 0, 'out': 1, 'in': 2, 'both': 3}
 
 
 class AsmError(Exception):
@@ -53,6 +54,7 @@ class Program:
     wrap_top: int          # absolute
     labels: dict = field(default_factory=dict)   # absolute addresses
     source: list = field(default_factory=list)   # (address, text) for listings
+    entry: int = None                            # START address (.entry), default: origin
 
     def __len__(self):
         return len(self.words)
@@ -78,7 +80,7 @@ def assemble(text, origin=0, defines=None, name=None):
     defines = dict(defines or {})
     lines = []
     labels = {}
-    wrap_bot = wrap_top = None
+    wrap_bot = wrap_top = entry = None
     pname = name or 'program'
     addr = origin
 
@@ -106,6 +108,8 @@ def assemble(text, origin=0, defines=None, name=None):
                 wrap_bot = addr
             elif d == '.wrap':
                 wrap_top = addr - 1
+            elif d == '.entry':
+                entry = addr
             elif d == '.origin':
                 pass  # origins are chosen by the loader
             else:
@@ -188,9 +192,11 @@ def assemble(text, origin=0, defines=None, name=None):
             w = enc(3, delay, pace, (pick(OUT_DST, ops[0], ln, 'destination') << 6) | count(ops[1], ln))
         elif mn in ('push', 'pull'):
             flags = rest.lower().replace(',', ' ').split()
-            block, cond = 1, 0
+            block, cond, align = 1, 0, 0
             for fl in flags:
-                if fl == 'block':
+                if fl == 'align' and mn == 'push':
+                    align = 1
+                elif fl == 'block':
                     block = 1
                 elif fl == 'noblock':
                     block = 0
@@ -198,7 +204,7 @@ def assemble(text, origin=0, defines=None, name=None):
                     cond = 1
                 else:
                     raise AsmError(f'line {ln}: bad {mn} flag {fl!r}')
-            w = enc(4, delay, pace, ((mn == 'pull') << 8) | (block << 7) | (cond << 6))
+            w = enc(4, delay, pace, ((mn == 'pull') << 8) | (block << 7) | (cond << 6) | (align << 5))
         elif mn == 'mov':
             if len(ops) != 2:
                 raise AsmError(f'line {ln}: mov dst, src')
@@ -218,8 +224,8 @@ def assemble(text, origin=0, defines=None, name=None):
             w = enc(7, delay, pace, 0)
         elif mn == 'crctap':
             w = enc(7, delay, pace, (1 << 6) | pick(TAP, rest, ln, 'tap'))
-        elif mn == 'stuff':
-            w = enc(7, delay, pace, (2 << 6) | pick(STUFF, rest, ln, 'stuff mode'))
+        elif mn == 'frame':
+            w = enc(7, delay, pace, (2 << 6) | pick(FRAME, rest, ln, 'frame side'))
         elif mn in ('evset', 'evclr'):
             w = enc(7, delay, pace, ((3 if mn == 'evset' else 4) << 6) | value(rest, ln, 0, 3))
         else:
@@ -233,7 +239,8 @@ def assemble(text, origin=0, defines=None, name=None):
         wrap_bot = origin
     if wrap_top is None:
         wrap_top = origin + len(words) - 1
-    return Program(pname, origin, words, wrap_bot, wrap_top, labels, source)
+    return Program(pname, origin, words, wrap_bot, wrap_top, labels, source,
+                   origin if entry is None else entry)
 
 
 def load_file(path, origin=0, defines=None):

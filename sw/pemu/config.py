@@ -48,7 +48,8 @@ class EngineConfig:
     set_cnt: int = 0
     in_base: int = 0
     jmp_pin: int = 0
-    jmp_src_last_in: bool = False
+    monitor: bool = False      # JMP PIN = pin equals the last bit sent; resync off on own 0s
+    stretch: bool = False      # serial clock: wait for the clock pin to read back released
     out_shr: bool = False
     in_shr: bool = False
     autopull: bool = False
@@ -60,6 +61,12 @@ class EngineConfig:
     resync_pin: int = 0
     resync_edge: int = 0       # 0 off, 1 falling, 2 rising, 3 both
     start: int = 0             # PC after reset / restart
+    serial: bool = False       # IN/OUT PINS, n move n bits through one pin
+    clk: bool = False          # serial bits generate a clock on clk_pin
+    clk_pin: int = 0
+    cpol: int = 0
+    cpha: int = 0
+    duplex: bool = False       # clocked OUT also samples IN_BASE into ISR
     bt_period: int = 0
     bt_point: int = 0
     crc_poly: int = 0
@@ -67,17 +74,20 @@ class EngineConfig:
 
     def for_program(self, prog):
         self.wrap_bot, self.wrap_top = prog.wrap_bot, prog.wrap_top
-        self.start = prog.origin
+        self.start = prog.entry
         return self
 
     def regs(self):
-        cfg0 = (self.clkdiv & 0xFFFF) | (self.wrap_bot & 63) << 16 | (self.wrap_top & 63) << 22
+        cfg0 = ((self.clkdiv & 0xFFFF) | (self.wrap_bot & 63) << 16 | (self.wrap_top & 63) << 22 |
+                (self.clk_pin & 15) << 28)
         cfg1 = ((self.out_base & 15) | (self.out_cnt & 15) << 4 | (self.set_base & 15) << 8 |
                 (self.set_cnt & 15) << 12 | (self.in_base & 15) << 16 | (self.jmp_pin & 15) << 20 |
-                int(self.jmp_src_last_in) << 24 | int(self.out_shr) << 25 | int(self.in_shr) << 26 |
-                int(self.autopull) << 27 | int(self.autopush) << 28)
+                int(self.monitor) << 24 | int(self.out_shr) << 25 | int(self.in_shr) << 26 |
+                int(self.autopull) << 27 | int(self.autopush) << 28 | int(self.stretch) << 29)
         cfg2 = ((self.pull_thresh & 31) | (self.push_thresh & 31) << 5 | (self.stuff_n & 15) << 10 |
-                int(self.stuff_ones) << 14 | (self.resync_pin & 15) << 15 | (self.resync_edge & 3) << 19 | (self.start & 63) << 21)
+                int(self.stuff_ones) << 14 | (self.resync_pin & 15) << 15 | (self.resync_edge & 3) << 19 |
+                (self.start & 63) << 21 | int(self.serial) << 27 | int(self.clk) << 28 | (self.cpol & 1) << 29 |
+                (self.cpha & 1) << 30 | int(self.duplex) << 31)
         cfg3 = (self.bt_period & 0xFFFF) | (self.bt_point & 0xFFFF) << 16
         return [cfg0, cfg1, cfg2, cfg3, self.crc_poly & 0xFFFFFFFF, (self.crc_width - 1) & 31]
 

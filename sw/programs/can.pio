@@ -1,0 +1,71 @@
+; A complete CAN 2.0 node in one engine: it receives (and ACKs) every frame on the bus,
+; standard and extended, and sends queued frames with arbitration and an ACK check.
+;
+; Config: SERIAL, MONITOR, OUT and SET windows = the TX pin, IN_BASE = JMP_PIN = RESYNC_PIN =
+;         the RX pin, RESYNC_EDGE falling, BT_PERIOD = clock / bit rate, BT_POINT = the sample
+;         point (e.g. 75%), STUFF_N 5, CRC width 15, poly 0x4599, OUT_SHR, IN_SHR,
+;         AUTOPULL, AUTOPUSH (thresholds 32).
+; Receive: one word with the TIME of the start of frame, then the destuffed bits SOF..CRC:
+;          bit j of word k is bit 32k + j of the frame (see sw/pemu/can.py).
+; Send:    push (number of bits SOF..data) - 1, then those bits, first bit in bit 0.
+; Events:  1 = frame sent and ACKed, 2 = not sent (lost arbitration, bit error or no ACK).
+.program can
+fail:
+    evset 2
+.entry
+idle:
+    set pins, 1             ; release the bus
+    set x, 10
+idl:
+    jmp.p pin, rec          ; 11 recessive bits in a row = bus idle
+    jmp idle
+rec:
+    jmp x--, idl
+poll:
+    jmp txrdy, tx           ; a frame is waiting to go
+    jmp pin, poll           ; wait for a start of frame
+    frame in                ; receiving: destuff, CRC over the received bits
+    in time, 32             ; timestamp: the start of frame on the shared clock (first RX word)
+    in.p pins, 13           ; SOF, ID[10:0], RTR or SRR
+    in.p pins, 1            ; IDE
+    jmp pin, ext            ; recessive: extended frame
+    in.p pins, 5            ; r0, DLC
+dlc:
+    mov osr, ::isr          ; DLC = the last 4 bits received
+    out y, 4
+    jmp y--, byte
+    jmp crc
+byte:
+    in.p pins, 8
+    jmp y--, byte
+crc:
+    in.p pins, 15           ; CRC (a trailing stuff bit is consumed too)
+    push align              ; the last bits of the frame, moved down to bit 0
+    mov x, crc              ; 0 when the CRC matched
+    jmp x--, idle           ; bad CRC: no ACK
+    nop.p                   ; CRC delimiter
+    set.p pins, 0           ; ACK slot
+    set.p pins, 1           ; ACK delimiter
+    jmp idle
+ext:
+    in.p pins, 25           ; ID[17:0], RTR, r1, r0, DLC
+    jmp dlc
+tx:
+    pull block
+    out x, 32               ; number of bits SOF..data, minus 1
+    frame out               ; sending: stuff bits, CRC over the sent bits
+    pull.p block            ; first data word; being paced, it also drops stale bit ticks,
+                            ; so the SOF starts on a clean bit boundary
+txb:
+    out.p pins, 1
+    jmp.p pin, ok           ; does the bus match our bit?
+    jmp fail                ; no: lost arbitration (or a bit error)
+ok:
+    jmp x--, txb
+    mov osr, ::crc
+    out.p pins, 15          ; CRC
+    set.p pins, 1           ; CRC delimiter
+    set.p pins, 1           ; ACK slot: release
+    jmp.p pin, fail         ; still recessive at the sample point: nobody ACKed
+    evset 1
+    jmp idle

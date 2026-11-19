@@ -31,9 +31,7 @@ module pe_core (
 
   localparam integer N = 3;              // engines
   localparam [31:0] ID = 32'h5045_4D55;  // "PEMU"
-  localparam [31:0] CFG0_MASK = 32'h0FFF_FFFF;
-  localparam [31:0] CFG1_MASK = 32'h1FFF_FFFF;
-  localparam [31:0] CFG2_MASK = 32'h07FF_FFFF;
+  localparam [31:0] CFG1_MASK = 32'h3FFF_FFFF;
 
   // ---------------- registers ----------------
   reg  [N-1:0] ctrl_en;
@@ -78,15 +76,6 @@ module pe_core (
   wire [31:0]  rx_head  [0:N-1];
   wire [N-1:0] tx_full, tx_empty, rx_full, rx_empty;
 
-  // pin writes: the highest-numbered engine wins
-  wire [15:0] pv_chain  [0:N];
-  wire [15:0] pd_chain  [0:N];
-  wire [3:0]  evs_chain [0:N];
-  wire [3:0]  evc_chain [0:N];
-  assign pv_chain[0]  = {2'b00, pin_val};
-  assign pd_chain[0]  = {8'd0, pin_dir};
-  assign evs_chain[0] = 4'd0;
-  assign evc_chain[0] = 4'd0;
 
   genvar g;
   generate
@@ -104,12 +93,25 @@ module pe_core (
           .tx_push(tx_push), .tx_din(bus_wdata), .rx_pop(rx_pop), .rx_head(rx_head[g]),
           .tx_full(tx_full[g]), .tx_empty(tx_empty[g]), .rx_full(rx_full[g]), .rx_empty(rx_empty[g])
       );
-      assign pv_chain[g+1]  = (pv_chain[g] & ~pv_mask[g]) | (pv_val[g] & pv_mask[g]);
-      assign pd_chain[g+1]  = (pd_chain[g] & ~pd_mask[g]) | (pd_val[g] & pd_mask[g]);
-      assign evs_chain[g+1] = evs_chain[g] | ev_set[g];
-      assign evc_chain[g+1] = evc_chain[g] | ev_clr[g];
     end
   endgenerate
+
+  // pin writes: the highest-numbered engine wins
+  reg [15:0] pv_all, pd_all;
+  reg [3:0]  evs_all, evc_all;
+  integer j;
+  always @(*) begin
+    pv_all  = {2'b00, pin_val};
+    pd_all  = {8'd0, pin_dir};
+    evs_all = 4'd0;
+    evc_all = 4'd0;
+    for (j = 0; j < N; j = j + 1) begin
+      pv_all  = (pv_all & ~pv_mask[j]) | (pv_val[j] & pv_mask[j]);
+      pd_all  = (pd_all & ~pd_mask[j]) | (pd_val[j] & pd_mask[j]);
+      evs_all = evs_all | ev_set[j];
+      evc_all = evc_all | ev_clr[j];
+    end
+  end
 
   // ---------------- outputs ----------------
   assign uo_gp = pin_val[13:8];
@@ -183,9 +185,9 @@ module pe_core (
       end
     end else begin
       time_cnt <= time_cnt + 32'd1;
-      pin_val  <= pv_chain[N][13:0];
-      pin_dir  <= pd_chain[N][7:0];
-      events   <= (events & ~evc_chain[N]) | evs_chain[N];
+      pin_val  <= pv_all[13:0];
+      pin_dir  <= pd_all[7:0];
+      events   <= (events & ~evc_all) | evs_all;
 
       if (bus_we && g_sel) begin
         case (bus_addr[3:0])
@@ -199,9 +201,9 @@ module pe_core (
       end
       if (bus_we && eng_sel) begin
         case (ereg)
-          3'd0: cfg0[esel] <= bus_wdata & CFG0_MASK;
+          3'd0: cfg0[esel] <= bus_wdata;
           3'd1: cfg1[esel] <= bus_wdata & CFG1_MASK;
-          3'd2: cfg2[esel] <= bus_wdata & CFG2_MASK;
+          3'd2: cfg2[esel] <= bus_wdata;
           3'd3: cfg3[esel] <= bus_wdata;
           3'd4: poly[esel] <= bus_wdata;
           3'd5: crcw[esel] <= bus_wdata[4:0];

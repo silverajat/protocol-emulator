@@ -106,14 +106,14 @@ async def board_uart_loopback_and_led(dut):
     with open(os.path.join(PROGS, 'uart_rx.pio')) as f:
         rx = assemble(f.read(), len(tx))
     bit = 16    # 1.6875 Mbaud at 27 MHz
-    cfg_tx = EngineConfig(clkdiv=bit // 8 - 1, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1,
-                          out_shr=True)
-    cfg_rx = EngineConfig(in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True, resync_pin=R.ui(3), resync_edge=1,
-                          bt_period=bit, bt_point=bit // 2)
+    cfg_tx = EngineConfig(serial=True, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1,
+                          out_shr=True, bt_period=bit, bt_point=bit // 2)
+    cfg_rx = EngineConfig(serial=True, in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True, resync_pin=R.ui(3),
+                          resync_edge=1, bt_period=bit, bt_point=bit // 2)
     led = assemble("""
     .wrap_target
-        set pins, 1 [3]
-        set pins, 0 [3]
+        set pins, 1 [7]
+        set pins, 0 [7]
     .wrap
     """, len(tx) + len(rx))
     cfg_led = EngineConfig(clkdiv=3, set_base=R.uo(6), set_cnt=1)

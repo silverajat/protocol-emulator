@@ -1,43 +1,35 @@
-; I2C master with clock stretching. SDA and SCL must be open-drain (PIN_OD), with pull-ups.
-; Config: OUT window = SDA, SET window = SCL, IN_BASE = SDA, OUT_SHR = 0, IN_SHR = 0.
-;         Define SCL = SCL's input-space index (for the stretch wait).
-; Timing: one bit is 3*D + 6 ticks; CLKDIV sets the tick (100 kHz at 60 MHz: D = 3, CLKDIV = 39).
+; I2C master with clock stretching and repeated START.
+; Config: SERIAL with CLK on SCL (CLK_PIN = SCL, CPOL 0, CPHA 0), DUPLEX, STRETCH,
+;         OUT window = IN_BASE = SDA, SET window = SCL, OUT_SHR 0. SDA and SCL open-drain
+;         (PIN_OD) with pull-ups. One bit takes 4 ticks: 100 kHz at 60 MHz is CLKDIV = 149.
 ;
-; Host command word (one per byte):
-;   [31] START before the byte (or repeated START)   [30] STOP after the byte
-;   [29:21] nine bits sent: write = data, 1 (release SDA for the ACK)
-;                           read  = 0xFF (release), then the ACK bit to send (0 ACK, 1 NACK)
-; Reply word: the nine bits seen on SDA: write = data echoed + slave ACK in bit 0 (0 = ACK),
-;             read = the byte from the slave + the ACK we sent.
+; The host drives it with one word per step; bits [31:26] name the step (its address,
+; from the assembler's labels), and the rest is its data:
+;   start  START (or repeated START), then a byte: [25:17] = the nine bits below
+;   byte   one byte: [25:17] = nine bits: write = data, 1 (release SDA for the ACK)
+;                                         read  = 0xFF, then the ACK to send (0 ACK, 1 NACK)
+;   stop   STOP
+; Every byte returns one word: the nine bits seen on SDA (write: data + the slave's ACK
+; in bit 0, 0 = ACK; read: the byte from the slave + our ACK).
 .program i2c_master
 .define D 3
-.define SCL 1
-    set pins, 1                 ; release SCL
-    mov pins, ~null             ; release SDA
+.define SCL 1               ; input-space index of SCL (for the START/STOP waits)
 .wrap_target
 top:
     pull block
-    out x, 1                    ; START?
-    jmp !x, data
-    mov pins, ~null [D]         ; SDA high
-    set pins, 1 [D]             ; SCL released
+    out pc, 6               ; jump to the step the host asked for
+start:
+    mov pins, ~null [D]     ; SDA released
+    set pins, 1 [D]         ; SCL released
     wait 1, gpio, SCL
-    mov pins, null [D]          ; SDA falls while SCL is high: START
-data:
-    out y, 1                    ; STOP after this byte?
-    set x, 8                    ; nine bits
-bit:
-    set pins, 0 [D]             ; SCL low
-    out pins, 1 [D]             ; SDA = next bit
-    set pins, 1                 ; release SCL
-    wait 1, gpio, SCL [D]       ; the slave may hold SCL low (clock stretching)
-    in pins, 1                  ; sample SDA
-    jmp x--, bit
-    set pins, 0 [D]             ; SCL low
+    mov pins, null [D]      ; SDA falls while SCL is high: START (then the byte)
+byte:
+    out pins, 9             ; nine clocked bits; SDA is sampled into ISR at the same time
     push block
-    jmp !y, top
-    mov pins, null [D]          ; STOP: SDA low,
-    set pins, 1 [D]             ;       SCL released,
+    jmp top
+stop:
+    mov pins, null [D]      ; SDA low (SCL is low after a byte)
+    set pins, 1 [D]         ; SCL released
     wait 1, gpio, SCL
-    mov pins, ~null [D]         ;       SDA rises while SCL is high
+    mov pins, ~null [D]     ; SDA rises while SCL is high: STOP
 .wrap

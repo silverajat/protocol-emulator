@@ -38,9 +38,9 @@ def rand_instr(rng):
 def rand_cfg(rng):
     bot = rng.randrange(64)
     top = rng.randrange(64)
-    cfg0 = rng.choice([0, 0, 0, 1, 2, 3]) | bot << 16 | top << 22
-    cfg1 = rng.getrandbits(29)
-    cfg2 = rng.getrandbits(27)
+    cfg0 = rng.choice([0, 0, 0, 1, 2, 3]) | bot << 16 | top << 22 | rng.getrandbits(4) << 28
+    cfg1 = rng.getrandbits(30)
+    cfg2 = rng.getrandbits(32)
     if rng.random() < 0.7:                      # short stuffing runs, mostly both-levels mode
         cfg2 = (cfg2 & ~(31 << 10)) | (rng.randrange(1, 5) << 10) | (int(rng.random() < 0.3) << 14)
     period = rng.choice([0, rng.randrange(1, 12), rng.randrange(1, 24), rng.randrange(1, 24)])
@@ -102,7 +102,7 @@ class Pair:
             r = d.u_core.g_eng[e].u_eng
             g = m.eng[e]
             for name in ('pc', 'x', 'y', 'osr', 'isr', 'crc', 'osr_cnt', 'isr_cnt', 'run', 'dly', 'div',
-                         'bt_cnt', 'pend_start', 'pend_samp', 'last_out', 'last_bit'):
+                         'bt_cnt', 'pend_start', 'pend_samp', 'last_out', 'last_bit', 'sbit', 'sph'):
                 self.expect(getattr(r, name).value, getattr(g, name), f'engine {e} {name}')
 
 
