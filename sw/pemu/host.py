@@ -70,31 +70,42 @@ class Host:
 
 
 class BridgeLink:
-    """LED board link: ESP32 USB serial, raw bytes passed through to the FPGA's host_bridge."""
+    """LED board link: ESP32 USB serial, raw bytes passed through to the FPGA's host_bridge.
+    Messages from the bridge are (type, length, payload); type 0xA8 carries stream words."""
 
     def __init__(self, port, baud=1_000_000, timeout=1.0):
         import serial  # pyserial
         self.ser = serial.Serial(port, baud, timeout=timeout)
+        self.stream = []          # (engine, word) received in stream mode
 
-    def _expect(self, marker):
+    def _read(self, n):
+        b = self.ser.read(n)
+        if len(b) != n:
+            raise TimeoutError('no reply from the board')
+        return b
+
+    def _message(self):
         while True:
-            b = self.ser.read(1)
-            if not b:
-                raise TimeoutError(f'no reply from the board (waiting for 0x{marker:02x})')
-            if b[0] == marker:
-                return
-            # anything else is boot text from the ESP32; skip it
+            t = self._read(1)[0]
+            if t >= 0xA5:          # anything below is boot text from the ESP32: skip it
+                break
+        n = self._read(1)[0]
+        return t, self._read(n)
+
+    def _expect(self, kind):
+        while True:
+            t, payload = self._message()
+            if t == 0xA8:
+                self.stream.append((payload[0], int.from_bytes(payload[1:5], 'big')))
+            elif t == kind:
+                return payload
 
     def spi(self, data):
         assert 0 < len(data) < 256
         self.ser.write(bytes([0x5A, len(data)]) + data)
-        self._expect(0xA5)
-        n = self.ser.read(1)
-        if not n or n[0] != len(data):
-            raise IOError('bad reply length from the board')
-        got = self.ser.read(len(data))
+        got = self._expect(0xA5)
         if len(got) != len(data):
-            raise TimeoutError('short reply from the board')
+            raise IOError('bad reply length from the board')
         return got
 
     def reset_chip(self):
@@ -103,5 +114,25 @@ class BridgeLink:
 
     def irq(self):
         self.ser.write(b'\x5C')
-        self._expect(0xA6)
-        return self.ser.read(1)[0]
+        return self._expect(0xA6)[0]
+
+    def stream_on(self, mask):
+        """Let the bridge pop the RX FIFOs of the engines in mask by itself (0 = stop)."""
+        self.ser.write(bytes([0x5D, mask & 7]))
+
+    def poll_stream(self, timeout=0.05):
+        """Collect stream words that have arrived (waits up to timeout for the first)."""
+        old = self.ser.timeout
+        self.ser.timeout = timeout
+        try:
+            while self.ser.in_waiting or not self.stream:
+                try:
+                    t, payload = self._message()
+                except TimeoutError:
+                    break
+                if t == 0xA8:
+                    self.stream.append((payload[0], int.from_bytes(payload[1:5], 'big')))
+        finally:
+            self.ser.timeout = old
+        out, self.stream = self.stream, []
+        return out

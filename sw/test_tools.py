@@ -72,3 +72,22 @@ def test_pe_demos_on_the_virtual_board():
     for args in (['id'], ['blink'], ['uart', 'hello rover'], ['can']):
         code, out = run_pe(*args)
         assert code == 0, f'pe.py {args}: {out}'
+
+
+def test_ak_mit_frames():
+    from pemu import ak
+    from pemu.can import Frame
+    lim = ak.MODELS['AK80-8']
+    f = ak.command(3, p=1.0, v=-2.0, kp=10, kd=1.5, t=0.5, lim=lim)
+    assert f.ident == 3 and len(f.data) == 8
+    # a reply with the same packing for p/v/t decodes back to the values (within one LSB)
+    pu, vu = ak.f2u(1.0, -lim.p, lim.p, 16), ak.f2u(-2.0, -lim.v, lim.v, 12)
+    tu = ak.f2u(0.5, -lim.t, lim.t, 12)
+    r = ak.reply(Frame(0, bytes([3, pu >> 8, pu & 255, vu >> 4, ((vu & 15) << 4) | (tu >> 8), tu & 255])), lim)
+    assert r['id'] == 3 and abs(r['p'] - 1.0) < 1e-3 and abs(r['v'] + 2.0) < 0.02 and abs(r['t'] - 0.5) < 0.02
+    assert ak.special(1, ak.ENTER).data[-1] == 0xFC
+
+
+def test_bench_help():
+    r = subprocess.run([sys.executable, os.path.join(HERE, 'bench.py'), '--help'], capture_output=True, text=True)
+    assert r.returncode == 0 and 'SN65HVD230' in r.stdout

@@ -18,7 +18,7 @@ from pemu.can import Frame, frame_length, parse, stuff  # noqa: E402
 
 
 class CanBus:
-    def __init__(self, dut, chip, bit, tx_uo=2, rx_ui=3, loop_delay=3):
+    def __init__(self, dut, chip, bit, tx_uo=2, rx_ui=3, loop_delay=int(os.environ.get('CAN_LOOP', '3'))):
         self.dut, self.chip, self.bit = dut, chip, bit
         self.tx_uo, self.rx_ui = tx_uo, rx_ui
         self.nodes = []

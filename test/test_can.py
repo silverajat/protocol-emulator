@@ -4,6 +4,8 @@
 # Gate 4: CAN 2.0A/B in one engine (sw/programs/can.pio) against bit-level model nodes.
 #   chip TX = uo_out[2] (through a 3-clock transceiver loop), chip RX = ui_in[3].
 
+import os
+
 import cocotb
 from cocotb.triggers import ClockCycles
 
@@ -12,8 +14,8 @@ from can_bus import CanBus, CanNode
 from pemu import EngineConfig
 from pemu.can import Frame, tx_words, rx_need, decode, stuff
 
-BIT = 40                 # clocks per bit (1.5 Mbit/s at 60 MHz; the program does not care)
-SP = 30                  # 75% sample point
+BIT = int(os.environ.get('CAN_BIT', '40'))   # clocks per bit (1.5 Mbit/s at 60 MHz; the program does not care)
+SP = BIT * 3 // 4                           # 75% sample point
 CAN = prog('can', origin=0)
 
 

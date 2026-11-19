@@ -91,9 +91,9 @@ async def bridge_reads_chip_id(dut):
     assert await h.read(R.ID) == R.CHIP_ID
     assert await h.read(R.ID, 2) == [R.CHIP_ID] * 2
     await u.send(b'\x5C')
-    assert await u.recv(2) == b'\xA6\x00'
+    assert await u.recv(3) == b'\xA6\x01\x00'
     await u.send(b'\x5B')
-    assert await u.recv(1) == b'\xA7'
+    assert await u.recv(2) == b'\xA7\x00'
     assert await h.read(R.ID) == R.CHIP_ID
 
 
@@ -130,3 +130,33 @@ async def board_uart_loopback_and_led(dut):
         await ClockCycles(dut.clk27, 1)
         seen.add(int(dut.led0_n.value))
     assert seen == {0, 1}, 'LED0 should blink'
+
+
+@cocotb.test()
+async def bridge_stream_mode(dut):
+    """Stream mode: the bridge pops engine RX FIFOs by itself and forwards every word, even when
+    the engine produces words faster than the UART can carry them (the bridge buffers)."""
+    h, u = await setup(dut)
+    prog = assemble("""
+        set x, 0
+    loop:
+        mov isr, x
+        push
+        jmp x--, next
+    next:
+        jmp loop [7]
+    """, 0)
+    # x counts down from 0: 0, ffffffff, fffffffe, ... one word every ~10 clocks, but stalls
+    # (push block) whenever the 4-word FIFO is full, so nothing is lost inside the chip
+    for addr, words in R.load_writes(0, EngineConfig(clkdiv=3), prog):
+        await h.write(addr, words)
+    await h.write(R.CTRL, 0x11)
+    await u.send(b'\x5D\x01')
+    got = []
+    while len(got) < 40:
+        m = await u.recv(7)
+        assert m[:3] == b'\xA8\x05\x00', m
+        got.append(int.from_bytes(m[3:], 'big'))
+    await u.send(b'\x5D\x00')
+    want = [(-i) & 0xFFFFFFFF for i in range(40)]
+    assert got == want, got[:8]

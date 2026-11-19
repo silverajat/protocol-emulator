@@ -16,6 +16,8 @@ class ModelBoard:
         self.jumper = jumper_67
         self.ui = 0
         self.uio = 0xFF
+        self.mask = 0
+        self.stream = []
         self.core.step(rst=True)
         self.core.step(rst=True)
 
@@ -36,7 +38,15 @@ class ModelBoard:
         for i in range(n):
             ui, uio = self._pins()
             rd = self.core.step(ui, uio, **(bus if i == 0 else {}))
+            if self.mask and not bus:
+                self._drain()
         return rd
+
+    def _drain(self):
+        # like the bridge in stream mode: pop any streaming engine's RX FIFO
+        for e, g in enumerate(self.core.eng):
+            if self.mask >> e & 1 and not g.rx.empty:
+                self.stream.append((e, g.rx.q.pop(0)))
 
     def spi(self, data):
         cmd, payload = data[0], data[1:]
@@ -54,6 +64,14 @@ class ModelBoard:
                 out += bytes(4)
             self.run(256)                                  # 32 SPI bits at clock / 8
         return bytes(out)
+
+    def stream_on(self, mask):
+        self.mask = mask & 7
+
+    def poll_stream(self, timeout=0.05):
+        self.run(int(timeout * 27e6) // 50)
+        out, self.stream = self.stream, []
+        return out
 
     def reset_chip(self):
         self.core.step(rst=True)
