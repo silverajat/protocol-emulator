@@ -15,8 +15,9 @@
   "//": "Users have reported that values up to 80 worked well for them.",
   "PL_TARGET_DENSITY_PCT": 65,
 
-  "//": "The routability-driven pass of global placement stops with GRT-0010 on this design",
-  "PL_ROUTABILITY_DRIVEN": false,
+  "//": "Synthesis was picking I/O pad cells as strong buffers for the widest-fanout nets",
+  "//": "(2x IOPadOut16mA, 1x IOPadOut4mA); they cannot be placed in the core (GRT-0010).",
+  "EXTRA_EXCLUDED_CELLS": ["sg13cmos5l_IOPad*"],
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
