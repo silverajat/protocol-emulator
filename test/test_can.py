@@ -192,3 +192,44 @@ async def can_stuff_bit_after_crc(dut):
     assert await chip_tx_result(chip) == 2
     got, _ = node.rx[n0]
     assert got.crc_ok and got.ident == f.ident
+
+
+@cocotb.test()
+async def can_two_engines_one_wire(dut):
+    """Two engines run the same CAN program (shared code) as two nodes on a one-wire bus:
+    uio[6] and uio[7], open-drain, tied together outside the chip (the LED-board J3 jumper)."""
+    from devices import PinBus
+    chip = await setup(dut)
+    pins = PinBus(dut, chip)
+    orig = pins.resolve
+
+    def wired(orig=orig):
+        v = orig()
+        bus = (v >> 6) & (v >> 7) & 1          # the jumper: both pins see the AND
+        return (v & 0x3F) | (bus << 6) | (bus << 7)
+    pins.resolve = wired
+
+    def node_cfg(pin):
+        c = can_cfg()
+        c.out_base = c.set_base = c.in_base = c.jmp_pin = c.resync_pin = pin
+        return c
+
+    await chip.load(0, node_cfg(6), CAN)
+    await chip.load(1, node_cfg(7).for_program(CAN))    # same program, already in memory
+    await chip.write(R.PIN_OD, 0xC0)
+    await chip.write(R.CTRL, 0x33)
+    await ClockCycles(dut.clk, 12 * BIT)
+    f = Frame(0x0A5, b'rover!')
+    for w in tx_words(f):
+        await chip.write(R.TXF(0), w)
+    assert await chip_tx_result(chip) == 2, 'engine 1 should ACK engine 0'
+    words = []
+    while True:
+        st = await chip.read(R.STATUS)
+        if not (st >> 4) & 1:
+            words.append(await chip.read(R.RXF(1)))
+            need = rx_need(words)
+            if need and len(words) == need:
+                break
+    got = decode(words)
+    assert got.crc_ok and got.ident == 0x0A5 and got.data == b'rover!'

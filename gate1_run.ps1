@@ -56,7 +56,7 @@ else {
   Start-Sleep -Seconds 4          # the ESP32 loads the FPGA after reset (about 2 s)
   $pe = Join-Path $root 'sw\pe.py'
   $results = @()
-  foreach ($cmd in @(@('id'), @('blink'), @('uart', 'hello rover'))) {
+  foreach ($cmd in @(@('id'), @('blink'), @('uart', 'hello rover'), @('can'))) {
     Write-Host "> pe.py $($cmd -join ' ')"
     & $py $pe @cmd
     $results += ,@(($cmd -join ' '), $LASTEXITCODE)
