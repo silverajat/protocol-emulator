@@ -1,0 +1,12 @@
+# Bits that are constant by design, excluded from toggle coverage: regex on the signal name
+# (instance paths merged), bit range, reason. tools/toggle_cov.py prints every exclusion.
+\.pins_rot$                 31:16  zero-extension of the 16-bit rotated input window
+(^|\.)(pins_in|raw_in|sync1|sync2)$   15:13  input-space indices 13-15 read 0 (ISA: only 13 inputs exist)
+^u_core\.status$            15:12  status nibble of a fourth engine (the chip has three)
+(^|\.)(time_cnt|time_i)$    31:19  a 32-bit cycle counter's top bits need up to 2^32 clocks (71 s at 60 MHz); the same incrementer as the low bits
+\.cfg1$                     31:30  CFG1 bits 31:30 are not implemented (CFG1_MASK)
+^u_host\._unused$           0:0    a lint sink for unused inputs
+\.nsh$                       5:5    32 - n with n in 1..32 is at most 31
+\.crc_mask$                  0:0    a CRC is at least 1 bit wide
+^u_core\._unused$           0:0    a lint sink for unused inputs
+^u_host\.bitcnt$            5:5    the bit counter never passes 31: a spare flip-flop, found by this report (left for the next RTL revision)

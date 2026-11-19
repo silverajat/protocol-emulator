@@ -64,6 +64,7 @@ async def host_port_id_and_registers(dut):
     chip = await setup(dut)
     assert await chip.read(R.ID) == R.CHIP_ID
     assert await chip.read(R.ID, 3) == [R.CHIP_ID] * 3
+    assert await chip.read(0x7F) == 0 and await chip.read(0x40) == 0   # unmapped addresses read 0
     await chip.write(R.EVENTS, 0x5)
     assert await chip.read(R.EVENTS) == 0x5
     await chip.write(R.PIN_OD, 0xFFFF)

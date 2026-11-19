@@ -35,15 +35,25 @@ def rand_instr(rng):
     return (op << 13) | (delay << 10) | (pace << 9) | args
 
 
-def rand_cfg(rng):
+def rand_cfg(rng, wide=False):
+    """wide: dividers and bit timers anywhere in their 16-bit range (slow engines, so the
+    counters' upper bits run against the model too)."""
     bot = rng.randrange(64)
     top = rng.randrange(64)
-    cfg0 = rng.choice([0, 0, 0, 1, 2, 3]) | bot << 16 | top << 22 | rng.getrandbits(4) << 28
+    div = rng.choice([rng.getrandbits(16) | 0x8000, rng.getrandbits(16) >> rng.randrange(16)]) if wide else rng.choice([0, 0, 0, 1, 2, 3])
+    cfg0 = div | bot << 16 | top << 22 | rng.getrandbits(4) << 28
     cfg1 = rng.getrandbits(30)
     cfg2 = rng.getrandbits(32)
     if rng.random() < 0.7:                      # short stuffing runs, mostly both-levels mode
         cfg2 = (cfg2 & ~(31 << 10)) | (rng.randrange(1, 5) << 10) | (int(rng.random() < 0.3) << 14)
     period = rng.choice([0, rng.randrange(1, 12), rng.randrange(1, 24), rng.randrange(1, 24)])
+    if wide:
+        period = rng.choice([rng.getrandbits(16) | 0x8000, rng.getrandbits(16) >> rng.randrange(16)])
+    if wide and period >= 0x1000:
+        cfg0 &= ~0xFFFF                         # a slow bit timer on a fast tick, so it wraps
+        cfg0 |= rng.randrange(2)
+        if rng.random() < 0.5:
+            cfg2 &= ~(3 << 19)                  # and no resync edges restarting it
     point = rng.randrange(period + 1) if period else rng.randrange(4)
     cfg3 = period | point << 16
     return [cfg0, cfg1, cfg2, cfg3, rng.getrandbits(32), rng.randrange(32)]
@@ -113,7 +123,7 @@ async def start(dut):
     dut.uio_in.value = 0
 
 
-async def fuzz(dut, seed, cycles):
+async def fuzz(dut, seed, cycles, wide=False):
     rng = random.Random(seed)
     p = Pair(dut, rng)
     for _ in range(4):
@@ -123,7 +133,7 @@ async def fuzz(dut, seed, cycles):
     for _ in range(64):
         await p.clock(we=True, addr=0x03, wdata=rand_instr(rng))
     for e in range(N_ENG):
-        for k, v in enumerate(rand_cfg(rng)):
+        for k, v in enumerate(rand_cfg(rng, wide)):
             await p.clock(we=True, addr=0x10 + 8 * e + k, wdata=v)
     await p.clock(we=True, addr=0x06, wdata=rng.getrandbits(14))
     en = rng.randrange(1, 1 << N_ENG)
@@ -131,7 +141,7 @@ async def fuzz(dut, seed, cycles):
     ui = uio = 0
     last = [0] * N_ENG
     for cyc in range(cycles):
-        if cyc % 150 == 149:              # restart engines that got stuck (keeps the fuzz busy)
+        if cyc % 150 == 149 and not wide:   # restart engines that got stuck (keeps the fuzz busy)
             stuck = sum(1 << e for e, g in enumerate(p.m.eng) if g.nexec == last[e])
             last = [g.nexec for g in p.m.eng]
             if stuck:
@@ -142,6 +152,8 @@ async def fuzz(dut, seed, cycles):
         if rng.random() < 0.05:
             ui ^= 1 << rng.randrange(3, 8)
         r = rng.random()
+        if wide == 'quiet' and 0.31 <= r < 0.326:
+            r = 0.9                             # no restarts or reconfiguration: long counts finish
         kw = {}
         if r < 0.10:
             kw = dict(we=True, addr=0x10 + 8 * rng.randrange(N_ENG) + 6, wdata=rng.getrandbits(32))
@@ -151,6 +163,8 @@ async def fuzz(dut, seed, cycles):
             kw = dict(re=True, addr=0x10 + 8 * rng.randrange(N_ENG) + 7)
         elif r < 0.30:
             kw = dict(addr=rng.randrange(0x30))
+        elif r < 0.305:
+            kw = dict(re=True, addr=rng.randrange(0x30, 0x80))   # unmapped addresses read 0
         elif r < 0.31:
             kw = dict(we=True, addr=0x07, wdata=rng.getrandbits(4))
         elif r < 0.315:
@@ -161,7 +175,7 @@ async def fuzz(dut, seed, cycles):
         elif r < 0.323:
             e = rng.randrange(N_ENG)
             k = rng.randrange(6)
-            kw = dict(we=True, addr=0x10 + 8 * e + k, wdata=rand_cfg(rng)[k])
+            kw = dict(we=True, addr=0x10 + 8 * e + k, wdata=rand_cfg(rng, wide)[k])
         elif r < 0.326:
             kw = dict(we=True, addr=rng.choice([0x02, 0x03]), wdata=rand_instr(rng) if rng.random() < 0.5 else rng.randrange(64))
         else:
@@ -181,3 +195,14 @@ async def diff_random_programs(dut):
     dut._log.info('executed: ' + ', '.join(f'{k} {v}' for k, v in STATS.items()))
     for k, v in STATS.items():
         assert v > 0, f'random programs never exercised {k}'
+
+
+@cocotb.test(skip=GL)
+async def diff_wide_ranges(dut):
+    """Dividers and bit timers across their whole range: slow engines, long counts, RTL == model."""
+    await start(dut)
+    n = int(os.environ.get('DIFF_WIDE_CYCLES', '70000'))
+    for s in range(1000, 1004):
+        mode = 'quiet' if s % 2 else True       # odd seeds: no restarts, so the timers wrap
+        await fuzz(dut, s, n, wide=mode)
+        dut._log.info(f'wide seed {s} ({"quiet" if s % 2 else "busy"}): {n} cycles agree')

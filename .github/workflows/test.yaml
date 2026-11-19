@@ -27,9 +27,25 @@ jobs:
         run: |
           cd test
           make clean
-          make
+          make COMPILE_ARGS="-I../src -DDUMP_CORE"   # dump the fuzzer's core too, for coverage
           # make will return success even if the tests fail, so check results.xml for failed tests
           python -m cocotb_tools.check_results results.xml
+
+      - name: Toggle coverage
+        run: |
+          pip install pywellen
+          python tools/toggle_cov.py test/tb.fst --min 98 | tee test/coverage.txt
+
+      - name: Formal proofs
+        run: |
+          pip install yowasp-yosys
+          sh formal/run.sh
+          sh formal/mutants.sh    # each deliberately broken RTL must fail a proof
+
+      - name: Tool tests (assembler, CAN / motor helpers, virtual board)
+        run: |
+          pip install pytest
+          python -m pytest -q sw/test_tools.py
 
       - name: Test Summary
         uses: test-summary/action@v2.4
@@ -45,4 +61,5 @@ jobs:
           path: |
             test/tb.fst
             test/results.xml
+            test/coverage.txt
             test/output/*
