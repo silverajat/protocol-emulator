@@ -51,10 +51,12 @@ Details: [ISA.md](ISA.md). In short, an engine executes one instruction per tick
 | `uart_tx.pio` / `uart_rx.pio` | 6 / 10 | 8N1, edge-locked receiver, framing errors |
 | `ws2812.pio` | 6 | NeoPixel LED strips |
 | `onewire.pio` | 21 | 1-Wire master (DS18B20) |
+| `manchester_tx.pio` / `manchester_rx.pio` | 12 / 12 | Manchester (IEEE 802.3 coding, as DALI and 10BASE-T): the receiver recovers the clock from the data, no bit timer |
+| `ir_tx.pio` | 7 | IR remote on a 38 kHz carrier: any mark/space protocol; NEC encoder on the host |
 
 ### Flexibility: protocols added after the hardware was finished
 
-WS2812 and 1-Wire were written after the RTL was done, without touching it: WS2812 needs pulse-width coding, 1-Wire needs open-drain time slots with the master and the device sharing one wire. Both pass against device models (`test/test_more.py`). **[Gate 6: more after the freeze, e.g. Manchester, NEC infrared, DMX512, SWD.]**
+Four protocols were written after the RTL was done, without touching it, each needing something different: WS2812 needs pulse-width coding; 1-Wire needs open-drain time slots with the master and the device sharing one wire; Manchester needs the clock recovered from the data (the receiver waits 3/4 of a bit after each mid-bit edge, so it never mistakes an edge between bits for data); the IR remote needs a 38 kHz carrier gated by marks and spaces, with the protocol itself (NEC) left on the host. All pass against models in `test/test_more.py`. **[Gate 6: more after the freeze, e.g. DMX512, SWD, LIN.]**
 
 ## 5. The rover drive-train bench **[after the bench]**
 

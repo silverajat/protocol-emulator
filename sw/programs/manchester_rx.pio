@@ -1,0 +1,24 @@
+; Manchester (IEEE 802.3 convention) receiver: no bit timer, the clock comes from the data.
+; After each mid-bit edge it waits 3/4 of a bit (past any edge between bits) and samples: that
+; level is the first half of the next bit, the inverse of its value. Then it waits for the next
+; mid-bit edge, whichever way it goes. Frames as manchester_tx: start bit (1), 8 bits LSB first.
+; Config: IN_BASE = JMP_PIN = the data pin, IN_SHR; 16 ticks per bit, as the transmitter.
+; Host: read bytes from RXF bits [7:0].
+.program manchester_rx
+.wrap_target
+    wait 0, pin, 0          ; idle low (or the low half of the start bit)
+    wait 1, pin, 0          ; the start bit's mid-bit edge: now in step with the sender
+    set y, 7 [2]
+bit:
+    nop [7]
+    mov x, ~pins            ; 3/4 bit after the last mid-bit edge
+    in x, 1
+    jmp pin, fall           ; high now: the next mid-bit edge falls
+    wait 1, pin, 0          ; low now: it rises
+    jmp next
+fall:
+    wait 0, pin, 0 [1]
+next:
+    jmp y--, bit [1]
+    push align
+.wrap

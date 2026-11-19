@@ -1,0 +1,22 @@
+; Manchester (IEEE 802.3 convention) transmitter: every bit has a transition in its middle,
+; 0 = high -> low, 1 = low -> high, so the receiver recovers the clock from the data.
+; Used by DALI lighting, many RF/IR links and 10BASE-T. Written after the RTL was frozen.
+; Each byte goes out as a start bit (a 1) and 8 data bits, LSB first; the line idles low.
+; Config: OUT and SET windows = the data pin, OUT_SHR; 16 ticks per bit (CLKDIV = clock / (16 * bit rate) - 1).
+; Host: one byte per TX FIFO word, in bits [7:0].
+.program manchester_tx
+    set pins, 0
+    set pindirs, 1
+.wrap_target
+    pull block              ; idle (low) until there is a byte
+    set pins, 0 [5]         ; start bit: low half (8 ticks with the two before it) ...
+    set pins, 1 [5]         ; ... then high
+    set y, 7
+bit:
+    out x, 1
+    mov pins, ~x [7]        ; first half: the inverse of the bit
+    mov pins, x [5]         ; second half: the bit (the transition is mid-bit)
+    jmp y--, bit
+    nop
+    set pins, 0             ; back to idle
+.wrap

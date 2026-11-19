@@ -78,3 +78,89 @@ async def onewire_ds18b20(dut):
     assert crc8_maxim(pad[:8]) == pad[8], f'bad CRC: {pad}'
     temp = ((pad[1] << 8 | pad[0]) ^ 0x8000) - 0x8000
     assert temp / 16 == 23.5
+
+
+@cocotb.test()
+async def manchester_link(dut):
+    """Manchester TX on engine 0 -> loopback wire -> RX on engine 1: the receiver has no bit
+    timer, it recovers the clock from the mid-bit transitions. Also checks the line coding."""
+    chip = await setup(dut)
+    chip.loop = True
+    tx = prog('manchester_tx', 0)
+    rx = prog('manchester_rx', len(tx))
+    clkdiv = 3                                            # 16 ticks x 4 clocks = 64 clocks per bit
+    await chip.load(0, EngineConfig(clkdiv=clkdiv, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2),
+                                    set_cnt=1, out_shr=True), tx)
+    await chip.load(1, EngineConfig(clkdiv=clkdiv, in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True), rx)
+    await chip.write(R.CTRL, 0x33)
+    edges = []
+
+    async def watch():                                    # times of transitions on the wire
+        prev, t = chip.uo(2), 0
+        while True:
+            await FallingEdge(dut.clk)
+            t += 1
+            v = chip.uo(2)
+            if v != prev:
+                edges.append(t)
+            prev = v
+    w = cocotb.start_soon(watch())
+    msg = [0x00, 0xFF, 0x55, 0xA5, 0x3C, 0x01, 0x80, 0x7E]
+    got = []
+    for i in range(0, len(msg), 4):
+        await chip.write(R.TXF(0), msg[i:i + 4])
+        for _ in range(4):
+            for _ in range(100):
+                if not (await chip.read(R.STATUS)) >> 4 & 1:    # engine 1 RX FIFO not empty
+                    break
+                await ClockCycles(dut.clk, 200)
+            got.append(await chip.read(R.RXF(1)) & 0xFF)
+    w.kill()
+    assert got == msg, [hex(g) for g in got]
+    gaps = {b - a for a, b in zip(edges, edges[1:])}
+    assert {32, 64} <= gaps, sorted(gaps)                 # half-bit and full-bit spacing only ...
+    assert all(g in (32, 64) or g > 64 for g in gaps), sorted(gaps)   # ... (and idle between bytes)
+
+
+@cocotb.test()
+async def ir_remote_nec(dut):
+    """IR remote: a NEC frame on a 38 kHz carrier, decoded from the pin by its envelope."""
+    from pemu.ir import nec_words, nec_decode
+    chip = await setup(dut)
+    p = prog('ir_tx', 0)
+    clkdiv = 9                                     # carrier = 4 ticks x 10 clocks (fast for sim)
+    await chip.load(0, EngineConfig(clkdiv=clkdiv, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2),
+                                    set_cnt=1, out_shr=True, autopull=True, pull_thresh=0), p)
+    await chip.write(R.CTRL, 0x11)
+    period = 4 * (clkdiv + 1)
+    rises, highs = [], set()
+
+    async def watch():
+        prev, t, r = 0, 0, 0
+        while True:
+            await FallingEdge(dut.clk)
+            t += 1
+            v = chip.uo(2)
+            if v and not prev:
+                rises.append(t)
+                r = t
+            if prev and not v:
+                highs.add(t - r)
+            prev = v
+    w = cocotb.start_soon(watch())
+    words = nec_words(0x5A, 0xC3)
+    for wd in words:                               # keep the 4-word TX FIFO topped up
+        while (await chip.read(R.STATUS)) >> 3 & 1:
+            await ClockCycles(dut.clk, 100)
+        await chip.write(R.TXF(0), wd)
+    await ClockCycles(dut.clk, 200 * period)
+    w.kill()
+    assert highs == {2 * (clkdiv + 1)}, highs      # 50% duty carrier
+    # envelope: a gap longer than one carrier period ends a mark
+    pairs, start = [], rises[0]
+    for a, b in zip(rises, rises[1:]):
+        if b - a > period:
+            mark = (a - start) // period + 1
+            pairs.append((mark, round((b - a) / period - 1.5)))   # last cycle + out = 1.5 periods
+            start = b
+    assert nec_decode(pairs) == (0x5A, 0xC3), pairs[:4]

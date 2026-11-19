@@ -40,6 +40,8 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `can_*` | bit-level CAN bus (`test/can_bus.py`) with model nodes that receive, ACK, transmit with arbitration, and join an arbitration that starts while they have a frame pending; 3-clock transceiver loop delay | standard and extended IDs, DLC 0-8, all-zero and all-one payloads (stuff bit every 5 bits), bad CRC (not ACKed), no ACK, arbitration won and lost, a stuff bit right after the CRC in both directions, timestamps vs the bus clock, two nodes on one chip running the same code |
 | `ws2812_strip` | WS2812 decoder: high-time of each bit classified as 0 (~0.35 us) or 1 (~0.7 us), latch on 50 us low | colours of a strip, GRB order, written as host words; a protocol added after the RTL froze |
 | `onewire_ds18b20` | DS18B20 on one open-drain wire: reset/presence, time slots, ROM and function commands, scratchpad with CRC-8 | presence detect, SKIP ROM + CONVERT T + READ SCRATCHPAD, temperature decoded and CRC-8 checked; open-drain sharing of one pin |
+| `manchester_link` | two engines over a wire | 8 bytes (all zeros, all ones, alternating, single bits), recovered with no bit timer; the line only ever changes at half-bit and full-bit spacing |
+| `ir_remote_nec` | envelope decoder for a carrier-modulated pin | 50% duty carrier; NEC leader, 32 bits and inverted-byte checks decode to the sent address and command |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 
 ## 4. Gate level
@@ -66,5 +68,7 @@ CI runs `test.py` and `test_bench.py` on the post-layout netlist. Before pushing
 | Gate-level sim | Enabling engines with uninitialized program memory makes X on outputs in gate-level sim (harmless in silicon). The test reads only the pins it needs and loads program memory first. | Test fix. |
 | 1-Wire test | `OUT PC` takes the low bits of the OSR when it shifts right, so the step address was read from the wrong end of the host word. | Step address moved to bits [5:0]; documented in ISA.md. |
 | 1-Wire test | (test bench) the DS18B20 model saw the rising edge at the end of its own presence pulse as a new reset. | Model fix. |
+| Manchester test | (program) the first half of each bit was one tick short: a delay of n holds an instruction for n+1 ticks. | `[7]`, not `[6]`. |
+| IR test | (test) four-word bursts into a FIFO with one free slot dropped words. | Top up one word at a time. |
 | Hardening | Synthesis used I/O pad cells as strong buffers for the widest-fanout nets; placement cannot place them (GRT-0010). | Pad cells excluded from synthesis. |
 | Hardening | 4 engines with read-back of configuration and program memory placed at 75% utilisation. | 3 engines, 16-bit instructions, write-only configuration and program memory: 51%. |

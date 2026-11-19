@@ -1,0 +1,20 @@
+; Infrared remote transmitter: carrier-modulated marks and spaces, the shape every IR remote
+; protocol uses (NEC, Sony SIRC, RC-6, air conditioners...). The program knows nothing about any
+; one protocol: each host word is one mark/space pair, so the encoding lives on the host
+; (sw/pemu/ir.py has NEC). Written after the RTL was frozen.
+; Carrier = 4 ticks (2 high, 2 low): CLKDIV = clock / (4 * carrier) - 1 (394 for 38 kHz at 60 MHz).
+; Config: OUT and SET windows = the IR LED pin, OUT_SHR, AUTOPULL, PULL_THRESH 32.
+; Host word: [15:0] mark length - 1, [31:16] space length - 1, both in carrier periods.
+.program ir_tx
+    set pins, 0
+    set pindirs, 1
+.wrap_target
+    out x, 16               ; mark (waits here, LED off, when there is no data)
+mark:
+    set pins, 1 [1]
+    set pins, 0
+    jmp x--, mark
+    out x, 16               ; space
+space:
+    jmp x--, space [3]
+.wrap
