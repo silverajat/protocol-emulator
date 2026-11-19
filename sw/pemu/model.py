@@ -56,6 +56,7 @@ class Engine:
         self.crcw = 0
         self.tx = Fifo()
         self.rx = Fifo()
+        self.nexec = 0          # instructions executed (test statistics, not hardware state)
         self.reset()
 
     def reset(self):
@@ -202,6 +203,7 @@ class Engine:
         if not execute:
             return req, new
 
+        self.nexec += 1
         st = STATS
         st[OPS[op]] += 1
         if pace:
@@ -357,7 +359,7 @@ class Core:
         self.pin_od = 0
         self.events = 0
         self.time = 0
-        self.pin_val = 0
+        self.pin_val = 0x3FFF           # outputs idle high, open-drain pins released
         self.pin_dir = 0
         self.sync1 = self.sync2 = 0
         self.rs_prev = [0] * 4

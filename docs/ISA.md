@@ -27,6 +27,8 @@ Engines see two pin spaces:
 
 Each output pin has a value bit and a direction bit (`uio` only; 1 = output). A pin set to **open-drain** (`PIN_OD` register) ignores its direction bit: value 0 drives low, value 1 releases the pin (high impedance). `uo_out` pins are always driven.
 
+After reset all output values are 1 (outputs high, open-drain pins released) and all `uio` directions are 0 (inputs).
+
 If several engines write the same pin in the same clock, the highest-numbered engine wins. Pin writes take effect at the end of the clock (the pad changes one clock after the instruction).
 
 ## Engine timing

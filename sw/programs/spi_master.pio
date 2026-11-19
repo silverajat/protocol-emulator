@@ -1,0 +1,24 @@
+; SPI master, mode 0 (CPOL 0, CPHA 0), MSB first, any length up to 32 bits.
+; Config: SET window = {SCK, CS_n} (2 pins, SCK first), OUT window = MOSI, IN_BASE = MISO,
+;         OUT_SHR = 0, IN_SHR = 0. Speed: one bit is 2*D + 6 ticks (CLKDIV sets the tick).
+; Host: push (number of bits - 1), then the data left-aligned. One word comes back with the
+;       received bits right-aligned.
+.program spi_master
+.define D 1
+    set pins, 0b10              ; CS high, SCK low
+    set pindirs, 0b11
+    mov pindirs, ~null          ; MOSI is an output
+.wrap_target
+    pull block
+    out x, 32                   ; bit count - 1
+    pull block                  ; data, MSB at bit 31
+    set pins, 0b00 [D]          ; CS low
+bit:
+    out pins, 1 [D]             ; MOSI changes while SCK is low
+    set pins, 0b01 [D]          ; SCK rises: both sides sample
+    in pins, 1
+    set pins, 0b00              ; SCK falls
+    jmp x--, bit
+    set pins, 0b10              ; CS high
+    push block
+.wrap

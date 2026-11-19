@@ -168,7 +168,7 @@ module pe_core (
       pin_od   <= 14'd0;
       events   <= 4'd0;
       time_cnt <= 32'd0;
-      pin_val  <= 14'd0;
+      pin_val  <= 14'h3FFF;    // outputs idle high; open-drain pins released
       pin_dir  <= 8'd0;
       for (i = 0; i < 4; i = i + 1) begin
         cfg0[i] <= {4'd0, 6'd63, 6'd0, 16'd0};

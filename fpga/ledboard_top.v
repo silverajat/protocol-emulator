@@ -6,18 +6,15 @@
  * The chip module (tt_um_silverajat_protoemu) is the exact RTL that goes to Tiny Tapeout;
  * this file only connects its pins to the board.
  *
- *   chip pin       board connection
- *   uo_out[2]  ->  FPGA pin 69 (net FPGA_UART_TX) -> ESP32 GPIO5   (Gate 0: "hello" text)
- *   ui_in[3]   <-  FPGA pin 70 (net FPGA_UART_RX) <- ESP32 GPIO4
- *   uio[7:0]  <->  J3 expansion header pins 3-10 (EXP_IO48, 49, 51-56)
- *   ui_in[2:0], uo_out[1:0]: host port, driven by a harness block from Gate 1 on
+ *   ESP32 UART (FPGA pins 70/69, 1 Mbaud) <-> host_bridge <-> chip host SPI port (ui_in[2:0], uo_out[0])
+ *   uo_out[5:2] -> ui_in[6:3]   internal loopback wires (UART/SPI loopback tests need no jumpers)
+ *   uo_out[6]   -> LED0, uo_out[7] -> LED1 (lit when the chip drives the pin high)
+ *   uio[7:0]   <-> J3 expansion header pins 3-10 (I2C, SPI, CAN devices). Open-drain pins rely on
+ *                  the FPGA pull-ups or external ones.
+ *   ui_in[7]    = 0
  *
- * Board LEDs: LED1 blinks about once a second (the FPGA design is running),
- *             LED0 flickers while the chip is sending (it follows the UART line).
- * The RGB strip MOSFETs and the microphone clock are held off.
- *
- * Clock: the board's 27 MHz oscillator drives the chip directly for now (CLK_HZ = 27 MHz).
- * A PLL to 60 MHz comes later, once the chip has logic that needs it.
+ * Clock: the board's 27 MHz oscillator drives the chip directly. Programs scale their dividers
+ * to the clock, so everything that runs here at 27 MHz runs on the chip at 60 MHz.
  */
 
 `default_nettype none
@@ -36,19 +33,29 @@ module ledboard_top (
     output wire       i2s_ws    // pin 81
 );
 
-  localparam integer CLK_HZ = 27_000_000;
+  // Power-on reset for the harness: about 39 ms after configuration.
+`ifdef SIM_FAST_POR
+  localparam integer POR_BIT = 4;
+`else
+  localparam integer POR_BIT = 19;
+`endif
+  reg [POR_BIT:0] por = 0;
+  wire por_n = por[POR_BIT];
+  always @(posedge clk27) if (!por[POR_BIT]) por <= por + 1'b1;
 
-  // Power-on reset: hold the chip in reset for about 39 ms after configuration.
-  reg [19:0] por = 20'd0;
-  wire rst_n = por[19];
-  always @(posedge clk27) if (!por[19]) por <= por + 20'd1;
-
-  wire [7:0] ui_in = {4'b0000, esp_tx, 3'b000};
+  wire sck, cs_n, mosi, chip_rst_n;
   wire [7:0] uo_out, uio_out, uio_oe, uio_in;
 
-  tt_um_silverajat_protoemu #(
-      .CLK_HZ(CLK_HZ)
-  ) chip (
+  host_bridge #(.BAUD_DIV(27)) bridge (
+      .clk(clk27), .por_n(por_n),
+      .uart_rx(esp_tx), .uart_tx(esp_rx),
+      .sck(sck), .cs_n(cs_n), .mosi(mosi), .miso(uo_out[0]), .irq(uo_out[1]),
+      .chip_rst_n(chip_rst_n)
+  );
+
+  wire [7:0] ui_in = {1'b0, uo_out[5:2], mosi, cs_n, sck};
+
+  tt_um_silverajat_protoemu chip (
       .ui_in  (ui_in),
       .uo_out (uo_out),
       .uio_in (uio_in),
@@ -56,10 +63,8 @@ module ledboard_top (
       .uio_oe (uio_oe),
       .ena    (1'b1),
       .clk    (clk27),
-      .rst_n  (rst_n)
+      .rst_n  (chip_rst_n)
   );
-
-  assign esp_rx = uo_out[2];
 
   // Bidirectional pins: drive only when the chip enables the output.
   genvar i;
@@ -70,18 +75,13 @@ module ledboard_top (
   endgenerate
   assign uio_in = j3;
 
-  reg [24:0] heartbeat = 25'd0;
-  always @(posedge clk27) heartbeat <= heartbeat + 25'd1;
-
-  assign led1_n = heartbeat[24];   // toggles every 0.62 s
-  assign led0_n = uo_out[2];       // lit while the UART line is low
+  assign led0_n = ~uo_out[6];
+  assign led1_n = ~uo_out[7];
 
   assign pwm_r   = 1'b0;
   assign pwm_g   = 1'b0;
   assign pwm_b   = 1'b0;
   assign i2s_sck = 1'b0;
   assign i2s_ws  = 1'b0;
-
-  wire _unused = &{uo_out[7:3], uo_out[1:0], 1'b0};
 
 endmodule

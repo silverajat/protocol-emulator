@@ -1,0 +1,43 @@
+; I2C master with clock stretching. SDA and SCL must be open-drain (PIN_OD), with pull-ups.
+; Config: OUT window = SDA, SET window = SCL, IN_BASE = SDA, OUT_SHR = 0, IN_SHR = 0.
+;         Define SCL = SCL's input-space index (for the stretch wait).
+; Timing: one bit is 3*D + 6 ticks; CLKDIV sets the tick (100 kHz at 60 MHz: D = 3, CLKDIV = 39).
+;
+; Host command word (one per byte):
+;   [31] START before the byte (or repeated START)   [30] STOP after the byte
+;   [29:21] nine bits sent: write = data, 1 (release SDA for the ACK)
+;                           read  = 0xFF (release), then the ACK bit to send (0 ACK, 1 NACK)
+; Reply word: the nine bits seen on SDA: write = data echoed + slave ACK in bit 0 (0 = ACK),
+;             read = the byte from the slave + the ACK we sent.
+.program i2c_master
+.define D 3
+.define SCL 1
+    set pins, 1                 ; release SCL
+    mov pins, ~null             ; release SDA
+.wrap_target
+top:
+    pull block
+    out x, 1                    ; START?
+    jmp !x, data
+    mov pins, ~null [D]         ; SDA high
+    set pins, 1 [D]             ; SCL released
+    wait 1, gpio, SCL
+    mov pins, null [D]          ; SDA falls while SCL is high: START
+data:
+    out y, 1                    ; STOP after this byte?
+    set x, 8                    ; nine bits
+bit:
+    set pins, 0 [D]             ; SCL low
+    out pins, 1 [D]             ; SDA = next bit
+    set pins, 1                 ; release SCL
+    wait 1, gpio, SCL [D]       ; the slave may hold SCL low (clock stretching)
+    in pins, 1                  ; sample SDA
+    jmp x--, bit
+    set pins, 0 [D]             ; SCL low
+    push block
+    jmp !y, top
+    mov pins, null [D]          ; STOP: SDA low,
+    set pins, 1 [D]             ;       SCL released,
+    wait 1, gpio, SCL
+    mov pins, ~null [D]         ;       SDA rises while SCL is high
+.wrap

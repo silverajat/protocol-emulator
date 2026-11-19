@@ -43,7 +43,7 @@ def rand_cfg(rng):
     cfg2 = rng.getrandbits(27)
     if rng.random() < 0.5:
         cfg2 = (cfg2 & ~(15 << 10)) | (rng.randrange(1, 6) << 10)
-    period = rng.choice([0, 0, rng.randrange(1, 24)])
+    period = rng.choice([0, rng.randrange(1, 12), rng.randrange(1, 24), rng.randrange(1, 24)])
     point = rng.randrange(period + 1) if period else rng.randrange(4)
     cfg3 = period | point << 16
     return [cfg0, cfg1, cfg2, cfg3, rng.getrandbits(32), rng.randrange(32)]
@@ -128,16 +128,25 @@ async def fuzz(dut, seed, cycles):
     en = rng.randrange(1, 16)
     await p.clock(we=True, addr=0x01, wdata=en | (en << 4))   # restart puts PC at START
     ui = uio = 0
-    for _ in range(cycles):
+    last = [0] * 4
+    for cyc in range(cycles):
+        if cyc % 150 == 149:              # restart engines that got stuck (keeps the fuzz busy)
+            stuck = sum(1 << e for e, g in enumerate(p.m.eng) if g.nexec == last[e])
+            last = [g.nexec for g in p.m.eng]
+            if stuck:
+                await p.clock(we=True, addr=0x01, wdata=p.m.ctrl_en | (stuck << 4))
+                continue
         if rng.random() < 0.1:
             uio ^= 1 << rng.randrange(8)
         if rng.random() < 0.05:
             ui ^= 1 << rng.randrange(3, 8)
         r = rng.random()
         kw = {}
-        if r < 0.06:
+        if r < 0.10:
             kw = dict(we=True, addr=0x10 + 8 * rng.randrange(4) + 6, wdata=rng.getrandbits(32))
         elif r < 0.12:
+            kw = dict(re=True, addr=0x10 + 8 * rng.randrange(4) + 7)
+        elif r < 0.16:
             kw = dict(re=True, addr=0x10 + 8 * rng.randrange(4) + 7)
         elif r < 0.30:
             kw = dict(addr=rng.randrange(0x30))

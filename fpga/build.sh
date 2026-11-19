@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p build
-SRC="../src/project.v ../src/hello_uart.v ledboard_top.v"
+SRC="../src/project.v ../src/host_spi.v ../src/pe_core.v ../src/pe_engine.v ../src/pe_fifo.v host_bridge.v ledboard_top.v"
 
 yowasp-yosys -q -l build/yosys.log -p "read_verilog -I../src $SRC; synth_gowin -top ledboard_top -json build/ledboard.json"
 yowasp-nextpnr-himbaechel-gowin --json build/ledboard.json --write build/ledboard_pnr.json \
