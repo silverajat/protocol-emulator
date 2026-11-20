@@ -25,6 +25,7 @@ class Uart:
         self.dut = dut
         self.rx = []
         dut.esp_tx.value = 1
+        dut.ir_in.value = 1            # IR receiver idle (no burst)
         cocotb.start_soon(self._listen())
 
     async def _listen(self):

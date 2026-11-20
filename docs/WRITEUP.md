@@ -54,14 +54,23 @@ Details: [ISA.md](ISA.md). In short, an engine executes one instruction per tick
 | `manchester_tx.pio` / `manchester_rx.pio` | 12 / 12 | Manchester (IEEE 802.3 coding, as DALI and 10BASE-T): the receiver recovers the clock from the data, no bit timer |
 | `ir_tx.pio` | 7 | IR remote on a 38 kHz carrier: any mark/space protocol; NEC encoder on the host |
 | `dmx_tx.pio` | 15 | DMX512 stage lighting: break, mark-after-break, 8N2 at 250 kbit/s |
+| `ir_nec_rx.pio` | 14 | IR remote receiver (NEC) using the bit timer: leader check, repeat codes and noise ignored |
+| `rgb_pwm.pio` | 18 | three PWM channels (an RGB strip) from one engine, by binary-coded modulation |
+| `spi_auto.pio` | 4 | SPI master with autopull/autopush, for tight memory |
 | `crc32.pio` | 8 | CRC-32 of a byte stream (Ethernet, zip, PNG), bit-exact with zlib |
 | `swd.pio` | 28 | ARM Serial Wire Debug host: reads a Cortex-M's debug port (STM32 IDCODE), one wire that turns around inside every transaction |
 
 ### Flexibility: protocols added after the hardware was finished
 
-Six protocols were written after the RTL was done, without touching it, each needing something different: WS2812 needs pulse-width coding; 1-Wire needs open-drain time slots with the master and the device sharing one wire; Manchester needs the clock recovered from the data (the receiver waits 3/4 of a bit after each mid-bit edge, so it never mistakes an edge between bits for data); the IR remote needs a 38 kHz carrier gated by marks and spaces, with the protocol itself (NEC) left on the host; SWD needs one data wire that changes direction twice inside a transaction, with a clock cycle for each turnaround (the chip can read and write an ARM microcontroller's debug port); DMX512 is the UART program plus a timed break. All pass against models in `test/test_more.py`. **[Gate 6: SWD against a real STM32 on the bench; more after the freeze, e.g. LIN, PS/2, HDLC.]**
+Nine programs were written after the RTL was done, without touching it, each needing something different: WS2812 needs pulse-width coding; 1-Wire needs open-drain time slots with the master and the device sharing one wire; Manchester needs the clock recovered from the data (the receiver waits 3/4 of a bit after each mid-bit edge, so it never mistakes an edge between bits for data); the IR remote needs a 38 kHz carrier gated by marks and spaces, with the protocol itself (NEC) left on the host; SWD needs one data wire that changes direction twice inside a transaction, with a clock cycle for each turnaround (the chip can read and write an ARM microcontroller's debug port); DMX512 is the UART program plus a timed break; the IR receiver times a remote's pulses with the bit timer (which restarts on every mark's end), so it decodes in 14 words; RGB PWM drives three channels from one engine with no counters. All pass against models in `test/test_more.py`. **[Gate 6: SWD against a real STM32 on the bench; more after the freeze, e.g. LIN, PS/2, HDLC.]**
 
-## 5. The rover drive-train bench **[after the bench]**
+## 5. Demos on hardware **[after the bench]**
+
+**Remote-controlled room lights** (no extra parts): the LED board's IR receiver and RGB strip are wired to the FPGA playing the chip. `pe.py remote`: engine 0 decodes any NEC remote (a light strip's own remote here), engine 1 runs the strip's PWM; every button picks a colour. Two protocols the chip was not designed for, against a device from another maker.
+
+**Remote-controlled rover** (`test_bench.remote_rover_bench`): the same remote, decoded on one engine, becomes CubeMars CAN commands from a second while the third samples motor current on the MCP3208: CAN 45 + IR 14 + SPI 4 = 63 of 64 words.
+
+### The rover drive-train bench
 
 Setup: rover lifted so one wheel spins freely; AK80-8 motor on CAN at 1 Mbit/s (SN65HVD230 transceiver); INA228 on the PDB v1 feed (I2C); MCP3208 sampling the current sense (SPI); the LED board's FPGA plays the chip at 27 MHz; `sw/bench.py` runs a velocity ramp and logs everything.
 

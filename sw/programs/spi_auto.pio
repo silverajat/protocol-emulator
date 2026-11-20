@@ -1,0 +1,14 @@
+; SPI master in 4 words: spi_master.pio with the FIFO moves done by autopull / autopush, for
+; when program memory is tight (CAN 45 + IR 14 + this = 63 of 64 words). One BITS-bit
+; transfer per TX word; CS_n stays low while it waits for the next word (an MCP3208 waits for
+; its start bit; it only needs CS_n high briefly between conversions, given here).
+; Config: as spi_master.pio, plus AUTOPULL with PULL_THRESH = BITS, AUTOPUSH with PUSH_THRESH = BITS.
+.program spi_auto
+.define BITS 24
+.define IDLE 0
+    set pindirs, 7
+.wrap_target
+    set pins, IDLE          ; CS_n low
+    out pins, BITS          ; waits for a TX word, then clocks it (MISO into ISR, pushed when full)
+    set pins, 2|IDLE [3]    ; CS_n high for a moment
+.wrap

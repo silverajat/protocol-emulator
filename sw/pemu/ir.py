@@ -33,3 +33,22 @@ def nec_decode(marks_spaces, unit=NEC_UNIT):
     addr, naddr, cmd, ncmd = (data >> s & 0xFF for s in (0, 8, 16, 24))
     assert addr ^ naddr == 0xFF and cmd ^ ncmd == 0xFF, hex(data)
     return addr, cmd
+
+
+def nec_config(pin, clk_hz):
+    """EngineConfig for ir_nec_rx.pio on input-space pin `pin` at clock `clk_hz`."""
+    from .config import EngineConfig
+    unit = clk_hz * 562.5e-6
+    assert 3 * unit < 65536, 'clock too fast for the 16-bit bit timer'
+    return EngineConfig(in_base=pin, jmp_pin=pin, resync_pin=pin, resync_edge=2, in_shr=True,
+                        bt_period=round(3 * unit), bt_point=round(1.5 * unit))
+
+
+def nec_word(w):
+    """An RXF word from ir_nec_rx.pio -> (address, command), or None if NEC's checks fail."""
+    a, na, c, nc = (w >> s & 0xFF for s in (0, 8, 16, 24))
+    if c ^ nc != 0xFF:
+        return None
+    if a ^ na == 0xFF:
+        return a, c
+    return w & 0xFFFF, c          # extended NEC: 16-bit address

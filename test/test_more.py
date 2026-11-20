@@ -291,3 +291,62 @@ async def crc32_ethernet(dut):
             await ClockCycles(dut.clk, 50)
         got = await chip.read(R.RXF(0))
         assert got == zlib.crc32(msg), (msg, hex(got), hex(zlib.crc32(msg)))
+
+
+@cocotb.test()
+async def ir_remote_receive_and_rgb(dut):
+    """The LED-board demo: NEC remote frames (as the IR receiver module outputs them: low during
+    a burst) decoded on ui_in[7] by ir_nec_rx, with repeat codes and glitches ignored; and
+    rgb_pwm driving three pins whose duty cycles match the colour."""
+    from pemu.ir import nec_word, nec_config
+    from pemu.rgb import word
+    chip = await setup(dut)
+    rx = prog('ir_nec_rx', 0)
+    pw = prog('rgb_pwm', len(rx))
+    unit = 80                                         # clocks per NEC unit (562.5 us), fast for sim
+    await chip.load(0, nec_config(R.ui(7), unit / 562.5e-6), rx)
+    await chip.load(1, EngineConfig(clkdiv=0, out_base=R.uo(2), out_cnt=3, out_shr=True).for_program(pw), pw)
+    await chip.write(R.CTRL, 0x33)
+
+    async def mark_space(m, s):
+        chip.set_ui(7, 0)
+        await ClockCycles(dut.clk, m * unit)
+        chip.set_ui(7, 1)
+        await ClockCycles(dut.clk, s * unit)
+
+    async def frame(addr, cmd):
+        data = addr | (addr ^ 0xFF) << 8 | cmd << 16 | (cmd ^ 0xFF) << 24
+        await mark_space(16, 8)
+        for i in range(32):
+            await mark_space(1, 3 if data >> i & 1 else 1)
+        await mark_space(1, 40)
+
+    async def pop():
+        for _ in range(100):
+            if not (await chip.read(R.STATUS)) & 1:
+                return await chip.read(R.RXF(0))
+            await ClockCycles(dut.clk, 100)
+        raise AssertionError(f'no IR word; pcs {(await chip.read(R.PCS)):#x} labels {rx.labels}')
+
+    await ClockCycles(dut.clk, 20 * unit)
+    await frame(0x04, 0x08)                           # e.g. a TV's address and a button
+    assert nec_word(await pop()) == (0x04, 0x08)
+    for _ in range(3):                                # button held: repeat codes are ignored
+        await mark_space(16, 4)
+        await mark_space(1, 40)
+    await mark_space(2, 20)                           # glitches (data-length marks) are ignored
+    await mark_space(1, 5)
+    await frame(0x00, 0x45)
+    assert nec_word(await pop()) == (0x00, 0x45)
+    assert (await chip.read(R.STATUS)) & 1, 'an extra word came from a repeat code or a glitch'
+
+    for colour in [(255, 0, 0), (0, 128, 64), (17, 200, 3)]:
+        await chip.write(R.TXF(1), word(*colour))
+        await ClockCycles(dut.clk, 600)               # let the new colour start
+        highs = [0, 0, 0]
+        for _ in range(255 * 4):
+            await FallingEdge(dut.clk)
+            for c in range(3):
+                highs[c] += chip.uo(2 + c)
+        duty = [round(h / 4) for h in highs]
+        assert all(abs(d - v) <= 2 for d, v in zip(duty, colour)), (colour, duty)

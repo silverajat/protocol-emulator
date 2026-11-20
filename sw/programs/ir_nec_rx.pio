@@ -1,0 +1,34 @@
+; NEC infrared remote receiver in 14 words, for a demodulating IR receiver module (IRM-H638T,
+; TSOP38...: low during a 38 kHz burst, a "mark"). The bit timer does the timing: it restarts
+; on every rising edge (the end of a mark) and gives sample points 1.5, 4.5, 7.5 ... units
+; later (1 unit = 562.5 us). Written after the RTL froze; fits beside CAN and SPI in 64 words.
+;   - leader check: still low two sample points into the mark (the first may be one left
+;     over from the idle line, so the second is 3 to 6 units in): data marks (1 unit) and
+;     noise are rejected;
+;   - 4.5 units after the leader: a frame's space (8 units) is still high, a repeat code
+;     (button held, 4 units) is in its stop mark: ignored;
+;   - each bit: 1.5 units after its mark ends, still high = a 1 (a 0's space is 1 unit).
+; Config: IN_BASE = JMP_PIN = RESYNC_PIN = the receiver pin, RESYNC_EDGE rising, IN_SHR,
+;         BT_PERIOD = 3 units and BT_POINT = 1.5 units in clocks (45563 / 22781 at 27 MHz;
+;         16-bit, so up to ~38 MHz). sw/pemu/ir.py nec_config() computes them.
+; Host: one RXF word per frame: [7:0] address, [15:8] ~address, [23:16] command, [31:24] ~command.
+.program ir_nec_rx
+.wrap_target
+start:
+    wait 0, pin, 0          ; a mark begins
+    nop.p
+    nop.p
+    jmp.p pin, start        ; over by now: noise or a data mark, not a leader
+    wait 1, pin, 0          ; the leader ends (the bit timer restarts)
+    nop.p                   ; 1.5 units
+    jmp.p pin, frame        ; 4.5 units: still high = a frame
+    jmp start               ; low = a repeat code's stop mark: ignore it
+frame:
+    set y, 31
+bit:
+    wait 0, pin, 0          ; a bit's mark (a 0's next mark has begun by its sample point)
+    wait 1, pin, 0          ; ... ends: the bit timer restarts
+    in.p pins, 1            ; 1.5 units into the space: still high = a 1
+    jmp y--, bit
+    push
+.wrap

@@ -8,6 +8,9 @@
                                           bus: put a jumper between J3 pins 9 and 10 (uio6, uio7)
     python sw/pe.py swd                   read an ARM microcontroller's debug ID over SWD: J3 pin 3
                                           (uio0) to SWDIO, pin 4 (uio1) to SWCLK, GND to GND
+    python sw/pe.py rgb 255 80 0          the chip drives the board's RGB strip (PWM from one engine)
+    python sw/pe.py ir                    print the buttons of any NEC IR remote pointed at the board
+    python sw/pe.py remote                IR remote -> strip colour: every button picks a colour
     python sw/pe.py peek 0x05             read a register
     python sw/pe.py poke 0x07 0           write a register
 
@@ -172,6 +175,83 @@ def cmd_swd(h, args):
     return asyncio.run(run())
 
 
+RGB_ORIGIN = 40      # rgb_pwm after ir_nec_rx (14 words) leaves room; both fit with spare
+
+
+def _rgb_start(h):
+    p = program('rgb_pwm', RGB_ORIGIN)
+    h.load(1, EngineConfig(clkdiv=104, out_base=R.uo(2), out_cnt=3, out_shr=True).for_program(p), p)
+    return p
+
+
+def _rgb_set(h, r, g, b):
+    from pemu.rgb import word
+    # the board's strip MOSFETs are on uo_out[4:2] inverted (outputs reset high = strip off),
+    # so send the complement: low for level/255 of the time
+    h.send(1, [word(255 - r, 255 - g, 255 - b)])
+
+
+def _ir_start(h):
+    from pemu.ir import nec_config
+    p = program('ir_nec_rx', 0)
+    h.load(0, nec_config(R.ui(7), CLK_HZ), p)
+    return p
+
+
+def cmd_rgb(h, args):
+    h.write(R.CTRL, 0)
+    _rgb_start(h)
+    h.write(R.CTRL, 0x22)
+    _rgb_set(h, args.r, args.g, args.b)
+    print(f'strip set to R {args.r} G {args.g} B {args.b} (engine 1, 255-step PWM at about 1 kHz)')
+    return True
+
+
+def _buttons(h, seconds):
+    from pemu.ir import nec_word
+    end = time.time() + seconds
+    while time.time() < end:
+        for w in h.recv(0):
+            b = nec_word(w)
+            if b:
+                yield b
+            else:
+                print(f'  (a word that failed the NEC checks: 0x{w:08x})')
+        time.sleep(0.02)
+
+
+def cmd_ir(h, args):
+    h.write(R.CTRL, 0)
+    _ir_start(h)
+    h.write(R.CTRL, 0x11)
+    print(f'point a NEC IR remote at the board and press buttons ({args.seconds} s)...')
+    n = 0
+    for addr, cmd in _buttons(h, args.seconds):
+        n += 1
+        print(f'  button: address 0x{addr:02x}, command 0x{cmd:02x}')
+    print(f'{n} button presses decoded by engine 0')
+    return n > 0
+
+
+PALETTE = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 160, 0), (255, 0, 160), (0, 200, 255),
+           (255, 255, 255), (120, 0, 255), (40, 40, 40), (0, 0, 0)]
+
+
+def cmd_remote(h, args):
+    h.write(R.CTRL, 0)
+    _ir_start(h)
+    _rgb_start(h)
+    h.write(R.CTRL, 0x33)
+    _rgb_set(h, 0, 0, 0)
+    print(f'IR remote -> RGB strip ({args.seconds} s): engine 0 decodes the remote, engine 1 runs the PWM.')
+    for addr, cmd in _buttons(h, args.seconds):
+        c = PALETTE[cmd % len(PALETTE)]
+        _rgb_set(h, *c)
+        print(f'  button 0x{cmd:02x} (address 0x{addr:02x}) -> R {c[0]} G {c[1]} B {c[2]}')
+    _rgb_set(h, 0, 0, 0)
+    return True
+
+
 def cmd_peek(h, args):
     print(f'0x{h.read(int(args.addr, 0)):08x}')
     return True
@@ -194,6 +274,12 @@ def main():
     c = sub.add_parser('can')
     c.add_argument('text', nargs='?', default='rover!')
     sub.add_parser('swd')
+    p = sub.add_parser('rgb')
+    for c in 'rgb':
+        p.add_argument(c, type=int)
+    for name in ('ir', 'remote'):
+        p = sub.add_parser(name)
+        p.add_argument('--seconds', type=float, default=60)
     p = sub.add_parser('peek')
     p.add_argument('addr')
     p = sub.add_parser('poke')

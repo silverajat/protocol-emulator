@@ -1,0 +1,30 @@
+; Three PWM channels from one engine (the RGB LED strip on the LED board), by binary-coded
+; modulation: bitplane k of the three 8-bit levels is shown for 2^k units, so each channel's
+; duty is level/256 with no counters or comparators. Written after the RTL froze.
+; Config: OUT window = the three pins (R, G, B from the lowest), OUT_SHR; one unit = one tick
+;         (PWM frequency = tick / 256: CLKDIV = 104 at 27 MHz is about 1 kHz).
+; Host: one word per colour, bits [3k+2:3k] = bit k of {B, G, R} (sw/pemu/rgb.py builds it).
+;       The colour stays until the next word (a non-blocking pull of an empty FIFO copies X).
+.program rgb_pwm
+.wrap_target
+    pull noblock
+    mov x, osr
+    out pins, 3             ; plane 0: 1 unit
+    out pins, 3 [1]         ; plane 1: 2
+    out pins, 3 [3]         ; plane 2: 4
+    out pins, 3 [7]         ; plane 3: 8
+    out pins, 3 [7]         ; plane 4: 16
+    nop [7]
+    out pins, 3 [7]         ; plane 5: 32
+    nop [7]
+    nop [7]
+    nop [7]
+    out pins, 3 [6]         ; plane 6: 64
+    set y, 6
+p6:
+    jmp y--, p6 [7]
+    out pins, 3 [4]         ; plane 7: 128 (with the 2 ticks of the next pull and mov)
+    set y, 14
+p7:
+    jmp y--, p7 [7]
+.wrap

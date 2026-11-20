@@ -11,7 +11,9 @@
  *   uo_out[6]   -> LED0, uo_out[7] -> LED1 (lit when the chip drives the pin high)
  *   uio[7:0]   <-> J3 expansion header pins 3-10 (I2C, SPI, CAN devices). Open-drain pins rely on
  *                  the FPGA pull-ups or external ones.
- *   ui_in[7]    = 0
+ *   ui_in[7]    <- IR receiver module (U7, FPGA pin 79): low during a 38 kHz burst
+ *   uo_out[4:2] -> RGB strip MOSFETs, inverted (a chip output low = that colour on), so the
+ *                  outputs' reset level (high) leaves the strip off
  *
  * Clock: the board's 27 MHz oscillator drives the chip directly. Programs scale their dividers
  * to the clock, so everything that runs here at 27 MHz runs on the chip at 60 MHz.
@@ -26,7 +28,8 @@ module ledboard_top (
     inout  wire [7:0] j3,       // J3 pins 3-10
     output wire       led0_n,   // pin 74, active low
     output wire       led1_n,   // pin 75, active low
-    output wire       pwm_r,    // pin 71, strip MOSFET gates: held off
+    input  wire       ir_in,    // pin 79, IR receiver output (active low)
+    output wire       pwm_r,    // pin 71, strip MOSFET gates
     output wire       pwm_g,    // pin 72
     output wire       pwm_b,    // pin 73
     output wire       i2s_sck,  // pin 82, microphone clock: held low
@@ -53,7 +56,7 @@ module ledboard_top (
       .chip_rst_n(chip_rst_n)
   );
 
-  wire [7:0] ui_in = {1'b0, uo_out[5:2], mosi, cs_n, sck};
+  wire [7:0] ui_in = {ir_in, uo_out[5:2], mosi, cs_n, sck};
 
   tt_um_silverajat_protoemu chip (
       .ui_in  (ui_in),
@@ -78,9 +81,9 @@ module ledboard_top (
   assign led0_n = ~uo_out[6];
   assign led1_n = ~uo_out[7];
 
-  assign pwm_r   = 1'b0;
-  assign pwm_g   = 1'b0;
-  assign pwm_b   = 1'b0;
+  assign pwm_r   = ~uo_out[2];
+  assign pwm_g   = ~uo_out[3];
+  assign pwm_b   = ~uo_out[4];
   assign i2s_sck = 1'b0;
   assign i2s_ws  = 1'b0;
 

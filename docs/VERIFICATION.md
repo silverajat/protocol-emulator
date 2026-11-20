@@ -49,6 +49,8 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `swd_debug_port` | ARM SW-DP model: JTAG-to-SWD select, line reset, request parity, ACK, turnarounds, DP registers | IDCODE 0x2BA01477 read; CTRL/STAT power-up written (parity checked by the target) and its acknowledge read back |
 | `dmx512_packet` | waveform decoder with the DMX512 timing limits | BREAK >= 88 us, MARK AFTER BREAK >= 8 us, start code and channels 8N2, two packets back to back |
 | `crc32_ethernet` | Python `zlib.crc32` | the CRC unit at its full 32-bit width with reflected input and output: five messages bit-exact (found missing by the coverage report: the top CRC bit had never moved) |
+| `ir_remote_receive_and_rgb` | NEC remote waveforms as an IR receiver module outputs them; duty-cycle measurement of three pins | frames decoded; held-button repeat codes and data-length glitches produce no words; three RGB colours' duty within 2/255 |
+| `remote_rover_bench` | IR remote + CubeMars motor + MCP3208 | a button press decoded on one engine while another samples the ADC, then a CAN command ACKed and answered; 63 of 64 words |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 
 ## 4. Gate level
@@ -111,5 +113,7 @@ What it found: the clock dividers' and bit timers' upper bits had never moved (f
 | IR test | (test) four-word bursts into a FIFO with one free slot dropped words. | Top up one word at a time. |
 | Coverage | (test gap) the dividers and bit timers had only ever been run with small values. | `diff_wide_ranges`; RTL and model agreed. |
 | Coverage | The host port's bit counter is one bit wider than it can count. | Noted; removed in the next RTL revision. |
+| IR receiver test | (program) a bit was tested twice, once by IN and once by JMP PIN a tick later, and the second test could land after a 0's next mark ended. | One sample, then wait for the next mark. |
+| IR receiver test | (program) the frame/repeat check at 2.9 ms landed just after a repeat code's stop mark. | The bit timer gives exact sample points (4.5 units). |
 | Hardening | Synthesis used I/O pad cells as strong buffers for the widest-fanout nets; placement cannot place them (GRT-0010). | Pad cells excluded from synthesis. |
 | Hardening | 4 engines with read-back of configuration and program memory placed at 75% utilisation. | 3 engines, 16-bit instructions, write-only configuration and program memory: 51%. |

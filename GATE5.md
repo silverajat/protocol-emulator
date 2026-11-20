@@ -55,3 +55,13 @@ Film: the lifted wheel turning; the board and its wires; the laptop terminal pri
 ## 5. Bonus, any time (no rover needed): debug an STM32 over SWD
 
 Any STM32 board (Nucleo, Blue Pill): J3 pin 3 (uio0) to SWDIO, pin 4 (uio1) to SWCLK, GND to GND; power the STM32 from its own USB. Then `python sw/pe.py swd`. Expect `DP IDCODE 0x2ba01477` (F1/F4) or `0x0bc11477` (G0/L0) and `debug power-up acknowledged`. That's a protocol written after the chip was finished, talking to real ARM silicon: worth 10 s of the video.
+
+## 6. Bonus, no soldering: remote-controlled room lights
+
+The LED board's IR receiver and RGB strip are wired to the FPGA, so with the strip plugged in:
+
+- `python sw/pe.py rgb 255 80 0` — the chip sets the strip colour (PWM from one engine).
+- `python sw/pe.py ir` — point the light strip's remote (or any NEC remote) at the board: each button prints its address and command.
+- `python sw/pe.py remote` — every button picks a colour. Film it: remote in hand, strip changing, the terminal printing the codes.
+
+This needs the new FPGA image: run `gate1_run.bat` once (it flashes the ESP32, which loads the FPGA at power-up).

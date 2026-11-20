@@ -29,6 +29,9 @@ The engines know nothing about any protocol. They offer generic pieces (shift re
 | `onewire.pio` | 21 | 1-Wire master: reset/presence, read and write slots (DS18B20 temperature sensor) |
 | `manchester_tx.pio` / `manchester_rx.pio` | 12 / 12 | Manchester line coding; the receiver recovers the clock from the data |
 | `dmx_tx.pio` | 15 | DMX512 stage-lighting transmitter |
+| `ir_nec_rx.pio` | 14 | NEC IR remote receiver (bit-timer based) |
+| `rgb_pwm.pio` | 18 | 3-channel PWM (RGB strip) from one engine |
+| `spi_auto.pio` | 4 | compact SPI master (autopull/autopush) |
 | `crc32.pio` | 8 | CRC-32 (Ethernet / zip / PNG) with the CRC unit |
 | `swd.pio` | 28 | ARM Serial Wire Debug host (reads a Cortex-M's debug port) |
 | `ir_tx.pio` | 7 | IR remote, 38 kHz carrier, any mark/space protocol (NEC encoder in `sw/pemu/ir.py`) |
