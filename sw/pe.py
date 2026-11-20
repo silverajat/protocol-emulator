@@ -14,6 +14,7 @@
     python sw/pe.py detect --pin ui7      the protocol detective: what is on this pin? (ui7 = the IR
                                           receiver: press a remote; J3 pins are uio0..uio7)
     python sw/pe.py speedrun              9 protocols on the same chip, one after another, each checked
+    python sw/pe.py ws2812 --leds 30      a rainbow on a WS2812 strip: data on J3 pin 3 (uio0), 5 V and GND
     python sw/pe.py lockstep              the board against the golden model, clock for clock
     python sw/pe.py peek 0x05             read a register
     python sw/pe.py poke 0x07 0           write a register
@@ -409,6 +410,29 @@ def cmd_lockstep(h, args):
     return False
 
 
+def cmd_ws2812(h, args):
+    import colorsys
+    p = program('ws2812', 0)
+    pin = R.uio(args.pin)
+    h.write(R.CTRL, 0)
+    # at 27 MHz, CLKDIV 3: 148 ns ticks, so a 0 is 0.44 us high, a 1 0.89 us, 1.48 us per bit (in spec)
+    p_cfg = EngineConfig(clkdiv=3, out_base=pin, out_cnt=1, set_base=pin, set_cnt=1, autopull=True, pull_thresh=24)
+    h.load(0, p_cfg, p)
+    h.write(R.CTRL, 0x11)
+    print(f'rainbow on {args.leds} LEDs for {args.seconds} s (uio{args.pin} = J3 pin {args.pin + 3})')
+    end, k = time.time() + args.seconds, 0
+    while time.time() < end:
+        words = []
+        for i in range(args.leds):
+            r, g, b = (int(c * args.bright) for c in colorsys.hsv_to_rgb(((i * 7 + k) % 360) / 360, 1, 1))
+            words.append(g << 24 | r << 16 | b << 8)
+        h.send(0, words)
+        time.sleep(0.03)                 # > 50 us low between frames latches the strip
+        k += 6
+    h.send(0, [0] * args.leds)
+    return True
+
+
 def cmd_peek(h, args):
     print(f'0x{h.read(int(args.addr, 0)):08x}')
     return True
@@ -436,6 +460,11 @@ def main():
     p.add_argument('--seconds', type=float, default=10)
     p.add_argument('--edges', type=int, default=2000)
     sub.add_parser('speedrun')
+    p = sub.add_parser('ws2812')
+    p.add_argument('--leds', type=int, default=30)
+    p.add_argument('--pin', type=int, default=0, help='uio pin (J3 pin = this + 3)')
+    p.add_argument('--seconds', type=float, default=20)
+    p.add_argument('--bright', type=int, default=60)
     p = sub.add_parser('lockstep')
     p.add_argument('--changes', type=int, default=60)
     p = sub.add_parser('rgb')
