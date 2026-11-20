@@ -13,7 +13,7 @@
 
   "//": "PL_TARGET_DENSITY_PCT - You can increase this if Global Placement fails with error GPL-0302.",
   "//": "Users have reported that values up to 80 worked well for them.",
-  "PL_TARGET_DENSITY_PCT": 65,
+  "PL_TARGET_DENSITY_PCT": 56,
 
   "//": "Synthesis was picking I/O pad cells as strong buffers for the widest-fanout nets",
   "//": "(2x IOPadOut16mA, 1x IOPadOut4mA); they cannot be placed in the core (GRT-0010).",
@@ -24,9 +24,14 @@
   "//": "shifter after exec on the critical path (86 logic levels; 59 without sharing, for ~12% more cells).",
   "SYNTH_SHARE_RESOURCES": false,
 
+  "//": "Routing was congested (detailed routing 171 min) and detours left long single-fanout",
+  "//": "wires on weak gates (a221oi_1 into 373 fF: 7.2 ns slew, 5.2 ns on one gate). Spread the",
+  "//": "placement closer to the 52% utilisation and let the resizer buffer wires over 400 um.",
+  "DESIGN_REPAIR_MAX_WIRE_LENGTH": 400,
+
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
-  "CLOCK_PERIOD": 30,
+  "CLOCK_PERIOD": 20,
 
   "//": "Hold slack margin - Increase them in case you are getting hold violations.",
   "PL_RESIZER_HOLD_SLACK_MARGIN": 0.1,
