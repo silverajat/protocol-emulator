@@ -97,13 +97,26 @@ The first complete design (4 engines, configuration and program memory readable)
 
 Result: 51% utilisation of the 1.21 mm^2 core, 3,286 flip-flops. Every hardening so far (LibreLane, IHP SG13CMOS5L) has routed with zero detailed-routing violations and passed DRC, LVS and antenna checks; timing has been the fight:
 
-| Clock target | Typical (1.2 V, 25 C) | Slow (1.08 V, 125 C) | Fast |
-|---|---|---|---|
-| 60 MHz (16.6 ns) | ~3 failing paths | fails | passes |
-| 50 MHz (20 ns) | passes (slack > 1 ns) | ~30+ failing paths | passes |
-| 33 MHz (30 ns) | **[pending]** | **[pending]** | **[pending]** |
+Signed off in the worst corner (slow, 1.08 V, 125 C). Early runs at 50-60 MHz failed there, so the clock was first dropped to 33 MHz and then bought back, one measured step at a time:
 
-Before routing the resizer saw no violations; the losses come from wire delay across a congested core (global routing was congested around the shared program-memory read port). Signing off in the worst corner at a lower clock costs nothing in function: every protocol's timing is a configuration value, and CAN at 1 Mbit/s is still 33 clocks per bit. **[the critical path from the timing report, and whether an RTL change before the freeze buys the clock back]**
+| Run (all corners pass setup and hold) | Slow-corner slack | Worst-corner fmax | Slew / cap violations | Flow time |
+|---|---|---|---|---|
+| 30 ns, resource sharing on | 2.93 ns | 37 MHz | 508 / 150 | 5h20m |
+| 30 ns, sharing off | 5.62 ns | 41 MHz | 201 / 72 | 5h04m |
+| 30 ns, sharing off + RTL path fixes | 5.92 ns | 41.5 MHz | 266 / 74 | 4h10m |
+| **22 ns, sharing off, spread placement, long-wire buffering** (RTL before the path fixes; the run with both is [pending]) | **1.26 ns** | **48 MHz** | **43 / 3** | **4h24m** |
+| Typical corner in the last run | 8.82 ns | 76 MHz | | |
+
+What each step fixed:
+
+- **Resource sharing.** Yosys merged the engines' shifters into shared multiplexer "supercells" and put one after `exec`: 86 logic levels, 59 without sharing, for about 12% more cells.
+- **Two RTL path fixes**, each proven to leave every register and output unchanged (`formal/equiv.sh`, Yosys equivalence by induction against the previous commit). The serial unit's stuff-bit decision read bit 0 of the full OUT shifter although it only ever needs one bit, which put the shifter on the `done` -> PC path; it now takes the end bit of the shift register. OUT's and IN's bit count, and the "one bit to one pin" test, are decoded straight from the instruction fields instead of waiting for the opcode select that picks the count for every other instruction. Pre-layout worst path 19.3 -> 15.8 ns.
+- **Wires, not logic, were the rest.** The timing report showed a 1x AOI gate driving 373 fF through a routing detour (7.2 ns slew, 5.2 ns on one gate, about a quarter of the path). Detailed routing was congested (171 minutes). Spreading the placement to just above the 52% utilisation and letting the resizer buffer any wire over 400 um removed most slew and capacitance violations and an hour of routing.
+- **A tight target.** At 30 ns the resizer stops once the paths meet; at 22 ns it upsizes the critical ones.
+
+Because a GDS run takes four to five hours, RTL ideas were first ranked with `tools/sta_lite.sh`, a pre-layout timing estimate written for this project: it synthesises with LibreLane's own ABC script, reads the IHP Liberty tables (delay and slew against load, slew propagated, buffer trees assumed on wide nets) and names the critical path in about three minutes.
+
+Signing off in the worst corner costs nothing in function: every protocol's timing is a configuration value, and CAN at 1 Mbit/s is 45 clocks per bit at 45 MHz.
 
 ## 7. Verification
 

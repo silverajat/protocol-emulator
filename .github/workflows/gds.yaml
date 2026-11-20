@@ -42,6 +42,24 @@ jobs:
       - name: Run Tiny Tapeout Precheck
         uses: TinyTapeout/tt-gds-action/precheck@ttihp27a
 
+      - name: Show DRC violations (rule and location)
+        if: failure()
+        run: |
+          for f in $(find tt/precheck/reports -name '*.lyrdb' -o -name '*.xml' 2>/dev/null); do
+            n=$(grep -c "<item>" "$f" || true)
+            [ "$n" = "0" ] && continue
+            echo "=== $f ($n items)"
+            python3 - "$f" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          r = ET.parse(sys.argv[1]).getroot()
+          for it in r.iter("item"):
+              cat = (it.findtext("category") or "").strip("'")
+              vals = [v.text for v in it.iter("value")][:2]
+              print(cat, "|", " ".join(v or "" for v in vals)[:300])
+          PY
+          done
+          exit 0
+
   gl_test:
     needs: gds
     runs-on: ubuntu-24.04
