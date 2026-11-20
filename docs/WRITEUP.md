@@ -67,6 +67,8 @@ Nine programs were written after the RTL was done, without touching it, each nee
 
 ## 5. Demos on hardware **[after the bench]**
 
+Seven demos, in [DEMOS.md](DEMOS.md); the ones below carry the write-up.
+
 **Remote-controlled room lights** (no extra parts): the LED board's IR receiver and RGB strip are wired to the FPGA playing the chip. `pe.py remote`: engine 0 decodes any NEC remote (a light strip's own remote here), engine 1 runs the strip's PWM; every button picks a colour. Two protocols the chip was not designed for, against a device from another maker.
 
 **Remote-controlled rover** (`test_bench.remote_rover_bench`): the same remote, decoded on one engine, becomes CubeMars CAN commands from a second while the third samples motor current on the MCP3208: CAN 45 + IR 14 + SPI 4 = 63 of 64 words.
@@ -128,11 +130,6 @@ python -m pytest sw/test_tools.py  # assembler, CAN and motor helpers, virtual b
 python sw/pe.py --sim can          # a demo on the golden model
 ```
 
-## Video script (2-3 minutes) **[shoot after the bench]**
+## Video (2-3 minutes) **[shoot after the bench]**
 
-1. (10 s) The rover, lifted, one wheel spinning; "this wheel is being driven by a chip that doesn't know what CAN is."
-2. (30 s) The board, the three wires buses; the program listing of `can.pio` on screen next to the 45 words.
-3. (40 s) Live plot: commanded speed, motor reply, PDB current, bus voltage, scrolling on one time axis.
-4. (30 s) Swap a program: the same engine now drives a WS2812 strip or reads a DS18B20, no hardware change.
-5. (30 s) How it's verified: the fuzzer counters, a failing-then-fixed bug.
-6. (10 s) GDS render; "8x4 tiles, three engines, any protocol."
+The demo plan and shot list are in [DEMOS.md](DEMOS.md): the protocol speedrun as the opener, the rover drive-train bench, the chip emulating the rover's motor with faults typed live, one IR remote driving the room lights and then the rover, the protocol detective, and lockstep against the model.
