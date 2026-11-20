@@ -16,100 +16,37 @@ Surfer, or https://app.surfer-project.org).
 """
 
 import argparse
-import dataclasses
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pemu import assemble, EngineConfig, AsmError  # noqa: E402
-from pemu import config as R  # noqa: E402
-from pemu.model import Core  # noqa: E402
-
-PIN_FIELDS = {'out_base', 'set_base', 'in_base', 'jmp_pin', 'resync_pin', 'clk_pin'}
-SHORT = {'in': 'in_base', 'jmp': 'jmp_pin', 'resync': 'resync_pin', 'clkpin': 'clk_pin'}
+from pemu import AsmError  # noqa: E402
+from pemu.sim import run, edges, OUT_PINS, IN_PINS  # noqa: E402
 
 
-def pin(name, output):
-    """Pin name -> index in the output or input space."""
-    n = name.lower()
-    if n.startswith('uio'):
-        return R.uio(int(n[3:]))
-    if n.startswith('uo'):
-        if not output:
-            raise SystemExit(f'{name} is an output; inputs are ui3..ui7 and uio0..uio7')
-        return R.uo(int(n[2:]))
-    if n.startswith('ui'):
-        if output:
-            raise SystemExit(f'{name} is an input; outputs are uo2..uo7 and uio0..uio7')
-        return R.ui(int(n[2:]))
-    return int(n, 0)
-
-
-def build_cfg(items):
-    cfg = EngineConfig()
-    names = {f.name for f in dataclasses.fields(EngineConfig)}
-    for it in items:
-        k, _, v = it.partition('=')
-        k = k.lower()
-        if k in ('out', 'set'):
-            p, _, cnt = v.partition(':')
-            setattr(cfg, k + '_base', pin(p, True))
-            setattr(cfg, k + '_cnt', int(cnt or 1))
-            continue
-        k = SHORT.get(k, k)
-        if k not in names:
-            raise SystemExit(f'unknown config field {k!r}; fields: {", ".join(sorted(names))}')
-        if k in PIN_FIELDS:
-            val = pin(v, output=(k in ('out_base', 'set_base', 'clk_pin')))
-        else:
-            val = int(v, 0)
-            if isinstance(getattr(cfg, k), bool):
-                val = bool(val)
-        setattr(cfg, k, val)
-    return cfg
-
-
-def parse_inputs(items):
-    """ui7=1@0,0@500 -> {(index, is_uio): [(cycle, level)]}"""
-    ev = {}
-    for it in items:
-        name, _, spec = it.partition('=')
-        n = name.lower()
-        key = ('uio', int(n[3:])) if n.startswith('uio') else ('ui', int(n[2:]))
-        pts = []
-        for part in spec.split(','):
-            lv, _, cyc = part.partition('@')
-            pts.append((int(cyc or 0), int(lv)))
-        ev[key] = sorted(pts)
-    return ev
-
-
-class Vcd:
-    def __init__(self, path, signals):
-        self.f = open(path, 'w')
-        self.ids = {}
-        self.prev = {}
-        f = self.f
+def write_vcd(path, res, clock_ns):
+    names = OUT_PINS + IN_PINS
+    ids = {n: chr(33 + i) for i, n in enumerate(names)}
+    ids['pc'] = chr(33 + len(names))
+    with open(path, 'w') as f:
         f.write('$timescale 1ns $end\n$scope module chip $end\n')
-        for i, (name, width) in enumerate(signals):
-            ident = chr(33 + i) if i < 90 else '#' + chr(33 + i - 90)
-            self.ids[name] = (ident, width)
-            f.write(f'$var wire {width} {ident} {name} $end\n')
-        f.write('$upscope $end\n$enddefinitions $end\n')
-
-    def sample(self, t, values):
-        out = []
-        for name, v in values.items():
-            if self.prev.get(name) == v:
-                continue
-            self.prev[name] = v
-            ident, width = self.ids[name]
-            out.append(f'{v}{ident}' if width == 1 else f'b{v:b} {ident}')
-        if out:
-            self.f.write(f'#{t}\n' + '\n'.join(out) + '\n')
-
-    def close(self):
-        self.f.close()
+        for n in names:
+            f.write(f'$var wire 1 {ids[n]} {n} $end\n')
+        f.write(f'$var wire 6 {ids["pc"]} pc $end\n$upscope $end\n$enddefinitions $end\n')
+        prev = {}
+        for t in range(res['cycles']):
+            out = []
+            for n in names:
+                v = res['pins'][n][t]
+                if prev.get(n) != v:
+                    prev[n] = v
+                    out.append(f'{v}{ids[n]}')
+            pc = res['pc'][t]
+            if prev.get('pc') != pc:
+                prev['pc'] = pc
+                out.append(f'b{pc:b} {ids["pc"]}')
+            if out:
+                f.write(f'#{round(t * clock_ns)}\n' + '\n'.join(out) + '\n')
 
 
 def main():
@@ -124,81 +61,27 @@ def main():
     ap.add_argument('--vcd')
     ap.add_argument('--clock-ns', type=float, default=1000 / 27, help='for the VCD time axis (27 MHz)')
     args = ap.parse_args()
-
     try:
-        prog = assemble(open(args.program).read())
-    except AsmError as e:
+        res = run(open(args.program).read(), args.cfg, args.send, args.cycles, args.loop, args.input, args.engine)
+    except (AsmError, ValueError) as e:
         raise SystemExit(f'{args.program}: {e}')
-    cfg = build_cfg(args.cfg)
-    sends = [int(s, 0) for s in args.send]
-    inputs = parse_inputs(args.input)
-    e = args.engine
-    print(f'{os.path.basename(args.program)}: {len(prog.words)} words, labels {prog.labels}')
-
-    c = Core()
-    c.step(rst=True)
-    c.step(rst=True)
-    for addr, words in R.load_writes(e, cfg, prog):
-        for w in words:
-            c.step(we=True, addr=addr, wdata=w)
-    c.step(we=True, addr=R.CTRL, wdata=(1 << e) | (1 << (4 + e)))
-
-    sig = [(f'uo{i}', 1) for i in range(2, 8)] + [(f'uio{i}', 1) for i in range(8)] + \
-          [(f'ui{i}', 1) for i in range(3, 8)] + [('pc', 6), ('x', 32), ('y', 32), ('tx_level', 3), ('rx_level', 3)]
-    vcd = Vcd(args.vcd, sig) if args.vcd else None
-    ui_gp = 0x1F                    # ui3..ui7 idle high
-    uio_ext = 0xFF                  # pull-ups
-    got, edges = [], {}
-    g = c.eng[e]
-    prev_out = None
-    for t in range(args.cycles):
-        uo = (c.uo_gp << 2) | (c.irq << 1)
-        drive = c.uio_oe
-        uio = (uio_ext & ~drive) | (c.uio_out & drive)
-        for (kind, i), pts in inputs.items():
-            lv = None
-            for cyc, v in pts:
-                if cyc <= t:
-                    lv = v
-            if lv is None:
-                continue
-            if kind == 'ui':
-                ui_gp = (ui_gp & ~(1 << (i - 3))) | (lv << (i - 3))
-            else:
-                uio_ext = (uio_ext & ~(1 << i)) | (lv << i)
-        if args.loop:
-            ui_gp = (ui_gp & ~0xF) | ((uo >> 2) & 0xF)
-        kw = {}
-        if sends and not g.tx.full:
-            kw = dict(we=True, addr=R.TXF(e), wdata=sends.pop(0) & 0xFFFFFFFF)
-        elif not g.rx.empty:
-            got.append(g.rx.head)
-            kw = dict(re=True, addr=R.RXF(e))
-        c.step(ui_gp << 3, uio, **kw)
-        outs = {f'uo{i}': uo >> i & 1 for i in range(2, 8)}
-        outs.update({f'uio{i}': uio >> i & 1 for i in range(8)})
-        if prev_out is not None:
-            for k, v in outs.items():
-                if v != prev_out[k]:
-                    edges.setdefault(k, []).append(t)
-        prev_out = outs
-        if vcd:
-            vals = dict(outs)
-            vals.update({f'ui{i}': ui_gp >> (i - 3) & 1 for i in range(3, 8)})
-            vals.update(pc=g.pc, x=g.x, y=g.y, tx_level=len(g.tx.q), rx_level=len(g.rx.q))
-            vcd.sample(round(t * args.clock_ns), vals)
-    if vcd:
-        vcd.close()
+    print(f'{os.path.basename(args.program)}: {res["words"]} words, labels {res["labels"]}')
+    if args.vcd:
+        write_vcd(args.vcd, res, args.clock_ns)
         print(f'wrote {args.vcd}')
-    for k, ts in sorted(edges.items()):
-        show = ', '.join(map(str, ts[:12])) + (' ...' if len(ts) > 12 else '')
-        print(f'  {k}: {len(ts)} edges at cycles {show}')
-    if not edges:
+    any_edge = False
+    for n in OUT_PINS:
+        ts = edges(res['pins'][n])
+        if ts:
+            any_edge = True
+            show = ', '.join(map(str, ts[:12])) + (' ...' if len(ts) > 12 else '')
+            print(f'  {n}: {len(ts)} edges at cycles {show}')
+    if not any_edge:
         print('  no output pin changed')
-    for w in got:
-        print(f'  RX word 0x{w:08x}')
-    print(f'after {args.cycles} cycles: PC {g.pc}, X 0x{g.x:08x}, Y 0x{g.y:08x}, '
-          f'{len(sends)} words not yet sent, {len(got)} received')
+    for t, w in res['rx']:
+        print(f'  RX word 0x{w:08x} (cycle {t})')
+    print(f'after {args.cycles} cycles: PC {res["pc"][-1]}, X 0x{res["x"]:08x}, Y 0x{res["y"]:08x}, '
+          f'{len(args.send) - res["sent"]} words not yet sent, {len(res["rx"])} received')
 
 
 if __name__ == '__main__':

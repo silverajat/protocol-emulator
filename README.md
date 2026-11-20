@@ -40,6 +40,8 @@ The engines know nothing about any protocol. They offer generic pieces (shift re
 
 The bench's three programs together fill the 64-word program memory exactly, and run at the same time.
 
+**Try it in a browser:** `docs/playground.html` runs the golden model (via Pyodide) with seven example protocols and a live waveform; edit a program and run it, nothing to install (`python tools/build_playground.py` rebuilds it from the current sources).
+
 **Write your own:** [docs/TUTORIAL.md](docs/TUTORIAL.md) adds a protocol from scratch in about 20 minutes, and `python sw/pesim.py PROGRAM.pio --cfg ... --vcd out.vcd` runs any program on the golden model with a waveform out (no hardware, no Verilog simulator).
 
 ## Run the tests

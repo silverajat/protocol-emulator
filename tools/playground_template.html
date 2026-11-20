@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Protocol Emulator playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: an engineer's bench tool, calm and exact.
+   IDEA: a logic-analyser capture on a circuit board: the program on one side, its pins on the other.
+   PICTURE: the live waveform of every pin the program touches, copper traces on solder mask.
+   COLOUR and TYPE: mask green ground and ink, copper traces, silkscreen white; IBM Plex Sans + Mono.
+   LAYOUT: editor left, capture right (stacked under 900px); results and notes in a band below. */
+:root{color-scheme:light dark;
+  --bg:light-dark(#f4f2ec,#0c1d16);--panel:light-dark(#ffffff,#112a20);--ink:light-dark(#14231b,#e8efe9);
+  --mute:light-dark(#566a5f,#9db3a6);--mask:light-dark(#0f5c3f,#1f6b4b);--copper:light-dark(#b0681f,#e39b52);
+  --line:light-dark(#d9d6cc,#24463a);--hi:light-dark(#0f5c3f,#5fd39d);--bad:light-dark(#a3241b,#ff8a7a)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans",system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(20px,3vw,40px) max(4vw,16px)}
+header.band{background:var(--mask);color:#eef5f0;padding-bottom:clamp(18px,2.4vw,30px)}
+h1{font-size:clamp(28px,4vw,44px);line-height:1.05;margin:0 0 8px;text-wrap:balance;font-weight:700}
+header p{margin:0;max-width:70ch;color:#cfe3d7}
+header a{color:#ffd29e}
+.grid{display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:20px;max-width:1400px;margin:0 auto}
+@media(max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+select,input,textarea,button{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%}
+textarea{font-family:"IBM Plex Mono",monospace;font-size:14px;line-height:1.45;min-height:320px;resize:vertical;tab-size:4}
+input.mono{font-family:"IBM Plex Mono",monospace;font-size:14px}
+:focus-visible{outline:2px solid var(--copper);outline-offset:1px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:10px;align-items:end}
+.check{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px;color:var(--mute)}
+.check input{width:20px;height:20px}
+button.run{background:var(--copper);color:#fff;border:0;font-weight:600;min-height:44px;margin-top:14px;cursor:pointer}
+button.run:disabled{opacity:.55;cursor:wait}
+#status{font-size:13px;color:var(--mute);margin-top:8px;min-height:1.5em}
+#status.err{color:var(--bad);white-space:pre-wrap;font-family:"IBM Plex Mono",monospace}
+.cap{display:flex;flex-direction:column;gap:10px}
+.fig{position:relative;min-height:340px;border-radius:8px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.fig>svg{position:absolute;inset:0;width:100%;height:100%}
+.zoom{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;font-size:13px;color:var(--mute)}
+.zoom input{padding:0;height:28px}
+.facts{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:14px}
+.facts b{font-family:"IBM Plex Mono",monospace;font-weight:600}
+.rx{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--mute);max-height:120px;overflow:auto}
+.notes{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;font-size:15px}
+.notes h2{font-size:17px;margin:0 0 6px}
+.notes p{margin:0;color:var(--mute)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.92em;overflow-wrap:anywhere}
+@media(prefers-reduced-motion:no-preference){.fig svg .trace{transition:opacity .2s}}
+</style>
+</head>
+<body>
+<header class="band">
+  <h1>Write a protocol, run it on the chip</h1>
+  <p>This is the cycle-accurate model of the Protocol Emulator ASIC, the same model its RTL is compared with on every clock, running in your browser. Pick an example or write your own program, then run it: every pin the engine touches is drawn below. <a href="https://github.com/silverajat/protocol-emulator/blob/gate-1/docs/ISA.md">Instruction set</a> · <a href="https://github.com/silverajat/protocol-emulator/blob/gate-1/docs/TUTORIAL.md">tutorial</a>.</p>
+</header>
+
+<main class="band">
+  <div class="grid">
+    <section class="card" aria-label="Program">
+      <label for="ex">Example</label>
+      <select id="ex"></select>
+      <label for="src">Program</label>
+      <textarea id="src" spellcheck="false"></textarea>
+      <label for="cfg">Configuration (any EngineConfig field; pins by name: uo2..uo7, ui3..ui7, uio0..uio7)</label>
+      <input id="cfg" class="mono">
+      <div class="row">
+        <div><label for="send">Host words into the TX FIFO</label><input id="send" class="mono"></div>
+        <div><label for="cyc">Clocks</label><input id="cyc" type="number" min="10" max="200000" step="10"></div>
+      </div>
+      <label for="inp">Input pins (e.g. <code>ui7=1@0,0@200,1@450</code>)</label>
+      <input id="inp" class="mono">
+      <div class="check"><input type="checkbox" id="loop"><label for="loop" style="margin:0">Loop uo2..uo5 back to ui3..ui6 (as on the LED board)</label></div>
+      <button class="run" id="run" disabled>Run on the model</button>
+      <div id="status">Loading Python (about 10 MB, once)…</div>
+    </section>
+
+    <section class="card cap" aria-label="Capture">
+      <div class="fig" id="fig"><svg id="wave" role="img" aria-label="Waveform of the engine's pins"></svg></div>
+      <div class="zoom">
+        <label for="from" style="margin:0">From</label><input type="range" id="from" min="0" max="1000" value="0">
+        <label for="span" style="margin:0">Span</label><input type="range" id="span" min="10" max="1000" value="1000">
+      </div>
+      <div class="facts" id="facts"></div>
+      <div class="rx" id="rx"></div>
+    </section>
+  </div>
+</main>
+
+<section class="band" style="padding-top:0">
+  <div class="notes">
+    <div><h2>What is running</h2><p>Your program is assembled to 16-bit words and run on one engine of the model, clock by clock: the engine's clock divider, delays, bit timer and pacing, serial unit, stuffer, CRC and FIFOs all behave as on the chip. The chip has three such engines sharing 64 words.</p></div>
+    <div><h2>Reading the capture</h2><p>Each row is a pin over time in clocks; the bottom row is the engine's program counter, with labels where they apply. Words the engine pushed to its RX FIFO are listed with the clock they appeared.</p></div>
+    <div><h2>Taking it further</h2><p>The same program runs on the real thing: <code>sw/pesim.py</code> does this from the command line with a VCD out, and <code>sw/pe.py</code> loads it onto the LED board's FPGA, which runs the chip's exact RTL.</p></div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+{
+const FILES = /*__FILES__*/{};
+const EXAMPLES = /*__EXAMPLES__*/[];
+const $ = id => document.getElementById(id);
+const st = $('status'), runBtn = $('run');
+let py = null, last = null;
+
+$('ex').innerHTML = EXAMPLES.map((e, i) => `<option value="${i}">${e.title}</option>`).join('');
+function pick(i) {
+  const e = EXAMPLES[i];
+  $('src').value = e.source; $('cfg').value = e.cfg; $('send').value = e.send;
+  $('cyc').value = e.cycles; $('inp').value = e.inputs || ''; $('loop').checked = !!e.loop;
+}
+$('ex').addEventListener('change', ev => { pick(+ev.target.value); if (py) go(); });
+pick(0);
+
+async function boot() {
+  try {
+    py = await loadPyodide();
+    py.FS.mkdirTree('/home/pyodide/pemu');
+    for (const [name, text] of Object.entries(FILES)) py.FS.writeFile('/home/pyodide/pemu/' + name, text);
+    await py.runPythonAsync(`
+import sys, json
+sys.path.insert(0, '/home/pyodide')
+from pemu.sim import run, edges
+from pemu.asm import AsmError
+def go(src, cfg, sends, cycles, loop, inputs):
+    try:
+        r = run(src, cfg.split(), sends.replace(',', ' ').split(), int(cycles), loop, inputs.split())
+    except Exception as e:
+        return json.dumps({'error': f'{type(e).__name__}: {e}'})
+    pins = {}
+    for n, v in r['pins'].items():
+        e = edges(v)
+        if e or (n.startswith('ui') and inputs.find(n + '=') >= 0) or (loop and n in ('ui3','ui4','ui5','ui6') and e):
+            pins[n] = [v[0], e]
+    pc, prev = [], None
+    for t, p in enumerate(r['pc']):
+        if p != prev:
+            pc.append([t, p]); prev = p
+    return json.dumps({'words': r['words'], 'labels': r['labels'], 'cycles': r['cycles'], 'pins': pins,
+                       'pc': pc, 'rx': r['rx'], 'sent': r['sent'], 'x': r['x'], 'y': r['y']})
+`);
+    runBtn.disabled = false; st.textContent = 'Ready.';
+    go();
+  } catch (e) { st.className = 'err'; st.textContent = 'Could not load Python: ' + e; }
+}
+
+function go() {
+  runBtn.disabled = true; st.className = ''; st.textContent = 'Running…';
+  setTimeout(() => {
+    const t0 = performance.now();
+    const out = JSON.parse(py.globals.get('go')($('src').value, $('cfg').value, $('send').value,
+      Math.max(10, Math.min(200000, +$('cyc').value || 1000)), $('loop').checked, $('inp').value));
+    runBtn.disabled = false;
+    if (out.error) { st.className = 'err'; st.textContent = out.error; return; }
+    last = out;
+    st.textContent = `Ran ${out.cycles.toLocaleString()} clocks in ${Math.round(performance.now() - t0)} ms.`;
+    $('from').max = out.cycles - 10; $('span').max = out.cycles; $('span').value = out.cycles; $('from').value = 0;
+    const labs = Object.entries(out.labels).map(([k, v]) => `${k}=${v}`).join(' ') || 'none';
+    $('facts').innerHTML = [`<span>Program <b>${out.words}</b> / 64 words</span>`,
+      `<span>Labels <b>${labs}</b></span>`, `<span>X <b>0x${(out.x >>> 0).toString(16)}</b></span>`,
+      `<span>Y <b>0x${(out.y >>> 0).toString(16)}</b></span>`].join('');
+    $('rx').innerHTML = out.rx.length ? out.rx.map(([t, w]) => `RX 0x${(w >>> 0).toString(16).padStart(8, '0')} at clock ${t}`).join('<br>')
+                                      : 'Nothing pushed to the RX FIFO.';
+    draw();
+  }, 20);
+}
+runBtn.addEventListener('click', go);
+['from', 'span'].forEach(id => $(id).addEventListener('input', draw));
+
+const svg = $('wave');
+function draw() {
+  if (!last) return;
+  const W = svg.clientWidth, H = svg.clientHeight, names = Object.keys(last.pins);
+  const pad = W < 520 ? 44 : 60, rows = names.length + 1, rh = Math.min(46, (H - 30) / Math.max(rows, 1));
+  const a = +$('from').value, span = Math.max(10, +$('span').value), b = Math.min(last.cycles, a + span);
+  const x = t => pad + (t - a) / (b - a) * (W - pad - 10);
+  const css = getComputedStyle(document.documentElement);
+  const cu = css.getPropertyValue('--copper'), mu = css.getPropertyValue('--mute'), hi = css.getPropertyValue('--hi'), ln = css.getPropertyValue('--line');
+  let s = '';
+  names.forEach((n, i) => {
+    const y0 = 14 + i * rh, yH = y0 + 4, yL = y0 + rh - 10;
+    let [lv, e] = last.pins[n], d = '', t = a;
+    for (const et of e) { if (et <= a) lv = 1 - lv; }
+    d = `M${x(a)},${lv ? yH : yL}`;
+    for (const et of e) {
+      if (et <= a) continue; if (et >= b) break;
+      d += `H${x(et)}V${lv ? yL : yH}`; lv = 1 - lv;
+    }
+    d += `H${x(b)}`;
+    s += `<text x="6" y="${(yH + yL) / 2 + 4}" font-size="12" fill="${mu}" font-family="IBM Plex Mono">${n}</text>`;
+    s += `<line x1="${pad}" x2="${W - 10}" y1="${y0 + rh - 4}" y2="${y0 + rh - 4}" stroke="${ln}"/>`;
+    s += `<path class="trace" d="${d}" fill="none" stroke="${cu}" stroke-width="2"/>`;
+  });
+  const yp = 14 + names.length * rh, inv = {};
+  for (const [k, v] of Object.entries(last.labels)) inv[v] = k;
+  s += `<text x="6" y="${yp + rh / 2}" font-size="12" fill="${mu}" font-family="IBM Plex Mono">pc</text>`;
+  let lastX = -99;
+  last.pc.forEach(([t, p], i) => {
+    const t1 = i + 1 < last.pc.length ? last.pc[i + 1][0] : last.cycles;
+    if (t1 <= a || t >= b) return;
+    const xx = x(Math.max(t, a));
+    s += `<line x1="${xx}" x2="${xx}" y1="${yp}" y2="${yp + rh - 12}" stroke="${ln}"/>`;
+    if (xx - lastX > 22) { s += `<text x="${xx + 3}" y="${yp + rh / 2}" font-size="11" fill="${hi}" font-family="IBM Plex Mono">${inv[p] ? inv[p] : p}</text>`; lastX = xx; }
+  });
+  const ticks = W < 520 ? 3 : 6;
+  for (let k = 0; k <= ticks; k++) {
+    const t = Math.round(a + (b - a) * k / ticks);
+    s += `<text x="${Math.min(x(t), W - 40)}" y="${H - 6}" font-size="11" fill="${mu}" font-family="IBM Plex Mono">${t}</text>`;
+  }
+  if (!names.length) s += `<text x="${pad}" y="40" fill="${mu}">No pin changed: check the windows in the configuration.</text>`;
+  svg.innerHTML = s;
+}
+const ro = new ResizeObserver(draw); ro.observe(svg);
+boot();
+}
+</script>
+</body>
+</html>
