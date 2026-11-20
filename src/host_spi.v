@@ -39,7 +39,7 @@ module host_spi (
 
   reg        in_data;    // command byte done
   reg        rd;
-  reg [5:0]  bitcnt;
+  reg [4:0]  bitcnt;
   reg [31:0] sh_in;
   reg [31:0] sh_out;
   reg        fetch;
@@ -51,7 +51,7 @@ module host_spi (
     if (~rst_n || ~cs_act) begin
       in_data <= 1'b0;
       rd      <= 1'b0;
-      bitcnt  <= 6'd0;
+      bitcnt  <= 5'd0;
       fetch   <= 1'b0;
       refetch <= 1'b0;
       miso    <= 1'b0;
@@ -73,18 +73,18 @@ module host_spi (
       if (sck_rise) begin
         sh_in <= {sh_in[30:0], din};
         if (!in_data) begin
-          if (bitcnt == 6'd7) begin
+          if (bitcnt == 5'd7) begin
             in_data  <= 1'b1;
             rd       <= sh_in[6];
             bus_addr <= {sh_in[5:0], din};
             fetch    <= sh_in[6];
-            bitcnt   <= 6'd0;
+            bitcnt   <= 5'd0;
           end else begin
-            bitcnt <= bitcnt + 6'd1;
+            bitcnt <= bitcnt + 5'd1;
           end
         end else begin
-          if (bitcnt == 6'd31) begin
-            bitcnt <= 6'd0;
+          if (bitcnt == 5'd31) begin
+            bitcnt <= 5'd0;
             if (rd) begin
               bus_re  <= 1'b1;     // the word has gone: pop it (takes effect next clock)
               refetch <= 1'b1;
@@ -94,7 +94,7 @@ module host_spi (
               bus_we    <= 1'b1;
             end
           end else begin
-            bitcnt <= bitcnt + 6'd1;
+            bitcnt <= bitcnt + 5'd1;
           end
         end
       end

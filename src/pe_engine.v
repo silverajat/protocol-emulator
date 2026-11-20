@@ -213,7 +213,13 @@ module pe_engine (
                                     : ((isr << n) | (in_data & lowmask(n)));
   wire [6:0]  icnt_sum     = {1'b0, isr_cnt} + {1'b0, n};
   wire [5:0]  icnt_after   = (icnt_sum > 7'd32) ? 6'd32 : icnt_sum[5:0];
-  wire        autopush_hit = in_act & autopush & ~do_stuff_in & (icnt_after >= push_th);
+  // autopush, decided without an adder on the stall path (it gates every state update):
+  // isr_cnt + n >= push_th  <=>  n >= push_th - isr_cnt, computed from registers alone. IN never
+  // takes PUSH ALIGN's count, so its n is the serial unit's 1 or the bit-count field.
+  wire [6:0]  push_room    = {1'b0, push_th} - {1'b0, isr_cnt};      // negative: past the threshold
+  wire [5:0]  n_in         = ser_on ? 6'd1 : nfld;
+  wire        autopush_hit = in_act & autopush & ~do_stuff_in &
+                             (push_room[6] | ({1'b0, n_in} >= push_room));
 
   // run counter after this clock's data bit (for the serial unit's trailing stuff bit)
   wire [3:0]  run_inc  = (run == 4'd15) ? 4'd15 : run + 4'd1;
