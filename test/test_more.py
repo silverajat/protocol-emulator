@@ -382,3 +382,80 @@ async def servo_pulse(dut):
     lows = [n for lv, n in runs if lv == 0][1:]
     assert highs[:2] == [150, 150] and highs[-2:] == [200, 200], highs
     assert all(h + l == 1000 for h, l in zip(highs, lows)), list(zip(highs, lows))
+
+
+@cocotb.test()
+async def protocol_detective(dut):
+    """edge_capture timestamps every edge of a pin (here: another engine's output, looped back);
+    the host's classifier then names the protocol and its rate (60 MHz clock assumed)."""
+    from pemu.detect import classify, from_times
+    from pemu.servo import word as servo_word
+    cases = [
+        ('uart_tx', EngineConfig(serial=True, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1,
+                                 out_shr=True, bt_period=521, bt_point=260), list(b'Rover 42\x00\xff'), 'UART'),
+        ('manchester_tx', EngineConfig(clkdiv=74, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1,
+                                       out_shr=True), [0xA5, 0x3C, 0x00, 0xFF, 0x81], 'Manchester'),
+        ('servo', EngineConfig(clkdiv=5, set_base=R.uo(2), set_cnt=1, out_shr=True),
+         [servo_word(300, 1000)], 'PWM'),
+    ]
+    for name, cfg, words, want in cases:
+        chip = await setup(dut)
+        chip.loop = True
+        src = prog(name, 0)
+        cap = prog('edge_capture', len(src))
+        await chip.load(0, cfg, src)
+        await chip.load(1, EngineConfig(in_base=R.ui(3)).for_program(cap), cap)
+        await chip.write(R.CTRL, 0x22)                # the recorder first
+        await chip.write(R.CTRL, 0x33)
+        for w in words:
+            while (await chip.read(R.STATUS)) >> 3 & 1:
+                await ClockCycles(dut.clk, 50)
+            await chip.write(R.TXF(0), w)
+        times, quiet = [], 0
+        for _ in range(3000):
+            if not (await chip.read(R.STATUS)) >> 4 & 1:
+                times.append(await chip.read(R.RXF(1)))
+                quiet = 0
+                if len(times) >= 80:
+                    break
+            else:
+                quiet += 1
+                if times and quiet > 150:
+                    break
+        assert all(b > a for a, b in zip(times, times[1:]))   # every edge, in order
+        kind, details, sentence = classify(from_times(times), 60_000_000)
+        dut._log.info(f'{name}: {len(times)} edges -> {sentence}')
+        assert kind == want, (name, kind, details, len(times))
+
+
+@cocotb.test()
+async def lockstep_with_model(dut):
+    """`pe.py lockstep` on the RTL: three engines (UART TX, servo, pin logger on the loopback
+    wires) started on one clock; the RTL's change log equals the golden model's, change for
+    change and clock for clock."""
+    from pemu import lockstep
+    from pemu.board import ModelBoard
+    from pemu.host import Host
+    chip = await setup(dut)
+    chip.loop = True
+    words = []
+    for op in lockstep.plan():
+        if op[0] == 'write':
+            await chip.write(op[1], op[2])
+        elif op[0] == 'load':
+            await chip.load(op[1], op[2], op[3])
+        elif op[0] == 'push':
+            for w in op[2]:
+                await chip.write(R.TXF(op[1]), w)
+    n = 40
+    for _ in range(20000):
+        if not (await chip.read(R.STATUS)) >> 8 & 1:
+            words.append(await chip.read(R.RXF(2)))
+            if len(words) >= n:
+                break
+    rtl = lockstep.to_log(words)
+    m = ModelBoard()
+    model = lockstep.run_sync(Host(m), m, n)
+    matched, diff = lockstep.compare(rtl, model)
+    assert diff is None and matched == n, (matched, diff, rtl[:6], model[:6])
+    dut._log.info(f'{n} changes over {rtl[-1][0]} clocks: RTL and model identical')

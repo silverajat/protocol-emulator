@@ -1,0 +1,20 @@
+; Logs every change on a group of input pins with its time on the chip's cycle counter: one
+; word per change, the pins in bits [31:28] and TIME's low 28 bits below. Used by `pe.py lockstep` to check the LED board
+; against the golden model clock for clock. Written after the RTL froze.
+; Config: IN_BASE = the first pin; N pins (4 here: ui3..ui6, the board's loopback wires).
+;         One pass of the loop is 5 ticks, so a change is logged within 5 clocks, always at
+;         the same point: the log is as deterministic as the chip.
+.program pin_logger
+.define N 4
+.wrap_target
+top:
+    mov isr, null
+    in pins, N
+    mov y, isr
+    jmp x!=y, change
+    jmp top
+change:
+    mov x, y
+    in time, 28             ; ISR = the pins (still there from IN PINS), then TIME
+    push
+.wrap

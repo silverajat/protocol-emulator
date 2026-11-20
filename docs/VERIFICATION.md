@@ -52,6 +52,8 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `ir_remote_receive_and_rgb` | NEC remote waveforms as an IR receiver module outputs them; duty-cycle measurement of three pins | frames decoded; held-button repeat codes and data-length glitches produce no words; three RGB colours' duty within 2/255 |
 | `remote_rover_bench` | IR remote + CubeMars motor + MCP3208 | a button press decoded on one engine while another samples the ADC, then a CAN command ACKed and answered; 63 of 64 words |
 | `emulated_motor_hardware_in_the_loop` | a model rover controller (CAN node) commanding an AK motor that the chip emulates | enter motor mode, 12 velocity commands with the emulated wheel speeding up in the replies; a corrupted-CRC reply rejected (no ACK, the chip reports it); the emulated motor going offline (the controller's command unACKed) |
+| `protocol_detective` | edge_capture on another engine's output | UART, Manchester and PWM named with their rates from the edge times alone |
+| `lockstep_with_model` | the golden model | three engines' pin-change log from the RTL equals the model's, change for change and clock for clock |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 
 ## 4. Gate level
@@ -61,6 +63,7 @@ CI runs `test.py` and `test_bench.py` on the post-layout netlist. Before pushing
 ## 5. Prototype
 
 - `fpga/sim/test_board.py` simulates the complete LED-board image (the chip plus the UART-to-SPI host bridge) with a 1 Mbaud UART host, as the ESP32 will drive it.
+- `pe.py lockstep` runs three engines (UART, servo pulses, and a pin-change logger on the loopback wires) on the board and the same plan on the model, and compares the two change logs clock for clock; `test_more.lockstep_with_model` shows the RTL and the model agree on every change (40 changes over 72,000 clocks), so on hardware any difference is the FPGA build, not the design.
 - `sw/pemu/board.py` puts the golden model behind the same link interface as the real board, wired like it (loopbacks, J3 jumper). `sw/test_tools.py` runs every `pe.py` demo against it, so the laptop tool is tested before it touches hardware.
 
 ## 6. Formal proofs

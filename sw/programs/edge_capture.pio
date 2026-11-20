@@ -1,0 +1,13 @@
+; Edge recorder for the protocol detective (sw/pemu/detect.py): the time of every edge on one
+; pin, on the chip's shared 32-bit cycle counter. Falling and rising edges alternate, starting
+; with a falling one. Written after the RTL froze.
+; Config: IN_BASE = the pin. Host: read words from RXF (the LED board's bridge buffers 1024).
+.program edge_capture
+.wrap_target
+    wait 0, pin, 0
+    in time, 32
+    push
+    wait 1, pin, 0
+    in time, 32
+    push
+.wrap

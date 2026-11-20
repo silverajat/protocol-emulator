@@ -102,3 +102,86 @@ def test_pesim_servo_timing():
                           '--send', '0x0050000c', '--cycles', '320'],
                          capture_output=True, text=True, check=True).stdout
     assert 'uo2: 8 edges at cycles 7, 12, 27, 112, 127, 212, 227, 312' in out, out
+
+
+# ---------------- protocol detective (sw/pemu/detect.py) ----------------
+def _edges_from_levels(levels, clocks_per_level):
+    """[(level, n units)] -> [(time, level after)] edges, starting from idle."""
+    t, out, prev = 0, [], None
+    for lv, n in levels:
+        if lv != prev:
+            out.append((t, lv))
+            prev = lv
+        t += n * clocks_per_level
+    return out
+
+
+def _bits_to_runs(bits):
+    runs = []
+    for b in bits:
+        if runs and runs[-1][0] == b:
+            runs[-1][1] += 1
+        else:
+            runs.append([b, 1])
+    return [tuple(r) for r in runs]
+
+
+def _uart(data, idle=20):
+    bits = [1] * 4
+    for byte in data:
+        bits += [0] + [byte >> i & 1 for i in range(8)] + [1] + [1] * 3
+    return _bits_to_runs(bits + [1] * idle)
+
+
+def test_detect_protocols():
+    from pemu.detect import classify
+    from pemu.can import Frame
+    clk = 60_000_000
+    # UART 115200 baud
+    e = _edges_from_levels(_uart(b'Hello, rover! 0x55 \x00\xff'), clk / 115200)
+    name, d, _ = classify(e, clk)
+    assert (name, d.get('baud')) == ('UART', 115200)
+    # DMX512: a break, then 250k 8N2
+    e = _edges_from_levels([(1, 10), (0, 25), (1, 3)] + _uart(bytes([0, 255, 128, 3, 7])), clk / 250000)
+    assert classify(e, clk)[0] == 'DMX512'
+    # CAN 500 kbit/s: stuffed frames
+    bits = []
+    for f in [Frame(0x123, b'\x11\x22\x33'), Frame(0x001, bytes(8)), Frame(0x7FF, b'\xff' * 4)]:
+        bits += [1] * 11 + f.wire()
+    e = _edges_from_levels(_bits_to_runs(bits + [1] * 11), clk / 500000)
+    name, d, _ = classify(e, clk)
+    assert (name, d.get('bit_rate')) == ('CAN', 500000)
+    # NEC IR at the receiver: units of 562.5 us
+    data = 0x04 | 0xFB << 8 | 0x08 << 16 | 0xF7 << 24
+    runs = [(1, 20), (0, 16), (1, 8)]
+    for i in range(32):
+        runs += [(0, 1), (1, 3 if data >> i & 1 else 1)]
+    e = _edges_from_levels(runs + [(0, 1), (1, 40)], clk * 562.5e-6)
+    assert classify(e, clk)[0] == 'NEC IR'
+    # WS2812: 1.25 us bits, 0.4 / 0.8 us highs (in units of 0.05 us)
+    runs = [(0, 100)]
+    for b in [1, 0, 1, 1, 0, 0, 1, 0] * 6:
+        runs += [(1, 16 if b else 8), (0, 9 if b else 17)]
+    e = _edges_from_levels(runs + [(0, 1200)], clk * 0.05e-6)
+    assert classify(e, clk)[0] == 'WS2812'
+    # Manchester at 100 kbit/s (half-bit units)
+    halves = []
+    for b in [1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1] * 3:
+        halves += [1 - b, b]
+    e = _edges_from_levels([(0, 6)] + _bits_to_runs(halves) + [(0, 20)], clk / 200000)
+    name, d, _ = classify(e, clk)
+    assert (name, d.get('bit_rate')) == ('Manchester', 100000)
+    # an I2C clock: bursts of 9 clocks at 100 kHz
+    runs = [(1, 10)]
+    for _ in range(4):
+        runs += [(0, 1), (1, 1)] * 9 + [(1, 6)]
+    e = _edges_from_levels(runs, clk / 200000)
+    name, d, _ = classify(e, clk)
+    assert name == 'clock' and d['clocks_per_burst'] == 9 and abs(d['freq_hz'] - 100000) < 1000
+    # servo PWM: 20 ms period, 1-2 ms high
+    runs = [(0, 5)]
+    for h in [1000, 1200, 1500, 1800, 2000, 1500]:
+        runs += [(1, h), (0, 20000 - h)]
+    e = _edges_from_levels(runs, clk / 1e6)
+    name, d, _ = classify(e, clk)
+    assert name == 'PWM' and abs(d['period_us'] - 20000) < 50

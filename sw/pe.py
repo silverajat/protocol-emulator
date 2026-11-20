@@ -11,6 +11,10 @@
     python sw/pe.py rgb 255 80 0          the chip drives the board's RGB strip (PWM from one engine)
     python sw/pe.py ir                    print the buttons of any NEC IR remote pointed at the board
     python sw/pe.py remote                IR remote -> strip colour: every button picks a colour
+    python sw/pe.py detect --pin ui7      the protocol detective: what is on this pin? (ui7 = the IR
+                                          receiver: press a remote; J3 pins are uio0..uio7)
+    python sw/pe.py speedrun              9 protocols on the same chip, one after another, each checked
+    python sw/pe.py lockstep              the board against the golden model, clock for clock
     python sw/pe.py peek 0x05             read a register
     python sw/pe.py poke 0x07 0           write a register
 
@@ -252,6 +256,159 @@ def cmd_remote(h, args):
     return True
 
 
+def cmd_detect(h, args):
+    from pemu.detect import classify, from_times
+    from pemu.sim import pin
+    p = program('edge_capture', 0)
+    h.write(R.CTRL, 0)
+    h.load(0, EngineConfig(in_base=pin(args.pin, output=False)), p)
+    link = h.link
+    link.stream_on(1)
+    h.write(R.CTRL, 0x11)
+    print(f'listening on {args.pin} for up to {args.seconds} s (or {args.edges} edges)...')
+    times, end = [], time.time() + args.seconds
+    while time.time() < end and len(times) < args.edges:
+        times += [w for e, w in link.poll_stream(0.02) if e == 0]
+    link.stream_on(0)
+    h.write(R.CTRL, 0)
+    kind, details, sentence = classify(from_times(times), CLK_HZ)
+    print(f'{len(times)} edges: {sentence}')
+    if details:
+        print('  ' + ', '.join(f'{k} {v}' for k, v in details.items()))
+    return kind != 'unknown'
+
+
+def _wait_words(h, e, n, tries=200):
+    out = []
+    for _ in range(tries):
+        out += h.recv(e, n - len(out))
+        if len(out) >= n:
+            break
+    return out
+
+
+def _sr_manchester(h):
+    tx, rx = program('manchester_tx', 0), program('manchester_rx', 20)
+    h.load(0, EngineConfig(clkdiv=3, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1, out_shr=True), tx)
+    h.load(1, EngineConfig(clkdiv=3, in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True), rx)
+    h.write(R.CTRL, 0x33)
+    msg = [0xA5, 0x00, 0xFF, 0x3C]
+    h.send(0, msg)
+    got = [w & 0xFF for w in _wait_words(h, 1, len(msg))]
+    return got == msg, f'{len(msg)} bytes, clock recovered from the data ({CLK_HZ // 64 // 1000} kbit/s)'
+
+
+def _sr_spi(h):
+    p = program('spi_master', 0)
+    h.load(2, EngineConfig(clkdiv=1, serial=True, clk=True, clk_pin=R.uo(2), duplex=True, set_base=R.uo(2),
+                           set_cnt=3, out_base=R.uo(4), out_cnt=1, in_base=R.ui(5)), p)
+    h.write(R.CTRL, 0x44)
+    h.send(2, [0xA5C3F0 << 8])
+    got = _wait_words(h, 2, 1)
+    v = got[0] & 0xFFFFFF if got else None
+    return v == 0xA5C3F0, f'24 bits full duplex, MOSI looped to MISO: 0x{v or 0:06x}'
+
+
+def _sr_dmx(h):
+    tx, rx = program('dmx_tx', 0), program('uart_rx', 20)
+    bit = CLK_HZ // 250_000
+    h.load(0, EngineConfig(serial=True, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1,
+                           out_shr=True, bt_period=bit, bt_point=bit // 2), tx)
+    h.load(1, EngineConfig(serial=True, in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True, resync_pin=R.ui(3),
+                           resync_edge=1, bt_period=bit, bt_point=bit // 2), rx)
+    h.write(R.CTRL, 0x33)
+    chans = [0, 10, 20, 30]
+    h.send(0, [(c << 1) | (i == 0) for i, c in enumerate(chans)])
+    got = [w & 0xFF for w in _wait_words(h, 1, len(chans) + 1)]
+    return got[-len(chans):] == chans, f'break + start code + 3 channels, read back by a UART engine: {got}'
+
+
+def _sr_crc(h):
+    import zlib
+    p = program('crc32', 0)
+    h.load(0, EngineConfig(out_shr=True, autopull=True, pull_thresh=0, crc_poly=0x04C11DB7, crc_width=32), p)
+    h.write(R.CTRL, 0x11)
+    msg = b'123456789'
+    data = msg + bytes(-len(msg) % 4)
+    h.send(0, [8 * len(msg) - 1] + [int.from_bytes(data[i:i + 4], 'little') for i in range(0, len(data), 4)])
+    got = _wait_words(h, 0, 1)
+    return bool(got) and got[0] == zlib.crc32(msg), f'CRC-32 of "123456789" = 0x{got[0] if got else 0:08x}'
+
+
+def _sr_servo_detect(h):
+    from pemu.servo import word
+    from pemu.detect import classify, from_times
+    src, cap = program('servo', 0), program('edge_capture', 20)
+    h.load(0, EngineConfig(clkdiv=CLK_HZ // 1_000_000 - 1, set_base=R.uo(2), set_cnt=1, out_shr=True), src)
+    h.load(1, EngineConfig(in_base=R.ui(3)), cap)
+    h.write(R.CTRL, 0x33)
+    h.send(0, [word(1500, 20000)])
+    times = _wait_words(h, 1, 24, tries=2000)
+    kind, d, sentence = classify(from_times(times), CLK_HZ)
+    return kind == 'PWM', f'servo pulses, identified by the edge recorder: {sentence}'
+
+
+def _sr_rgb(h):
+    _rgb_start(h)
+    h.write(R.CTRL, 0x22)
+    for c in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255), (0, 0, 0)]:
+        _rgb_set(h, *c)
+        time.sleep(0.25)
+    return True, 'RGB strip: red, green, blue, white (look at the strip)'
+
+
+def cmd_speedrun(h, args):
+    import argparse as _ap
+    import contextlib
+    import io
+    steps = [
+        ('UART', lambda: cmd_uart(h, _ap.Namespace(text='speedrun')), 'engine 0 -> wire -> engine 1, 115200 baud'),
+        ('CAN', lambda: cmd_can(h, _ap.Namespace(text='rover!')), 'two engines as two nodes, ACKed (needs the J3 pins 9-10 jumper)'),
+        ('Manchester', lambda: _sr_manchester(h), None),
+        ('SPI', lambda: _sr_spi(h), None),
+        ('DMX512', lambda: _sr_dmx(h), None),
+        ('CRC-32', lambda: _sr_crc(h), None),
+        ('Servo + detective', lambda: _sr_servo_detect(h), None),
+        ('RGB PWM', lambda: _sr_rgb(h), None),
+    ]
+    print('Protocol speedrun: one chip, the same pins, a new program each time\n')
+    passed = 0
+    t_all = time.time()
+    for i, (name, fn, note) in enumerate(steps, 1):
+        h.write(R.CTRL, 0)
+        h.write(R.EVENTS, 0)
+        t0 = time.time()
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                r = fn()
+        except Exception as e:                     # keep going: show what failed
+            r = (False, f'error: {e}')
+        ok, detail = r if isinstance(r, tuple) else (bool(r), note)
+        passed += ok
+        print(f'  {"OK  " if ok else "FAIL"} {i}. {name:18s} {detail}  ({time.time() - t0:.2f} s)')
+    h.write(R.CTRL, 0)
+    print(f'\n{passed}/{len(steps)} protocols in {time.time() - t_all:.1f} s, no hardware changed')
+    return passed == len(steps)
+
+
+def cmd_lockstep(h, args):
+    from pemu import lockstep
+    from pemu.board import ModelBoard
+    print('running the same three programs on the board and on the golden model...')
+    board = lockstep.run_sync(h, h.link, args.changes, CLK_HZ)
+    m = ModelBoard()
+    model = lockstep.run_sync(Host(m), m, args.changes, CLK_HZ)
+    n, diff = lockstep.compare(board, model)
+    span = board[-1][0] if board else 0
+    if diff is None and board:
+        print(f'{n} pin changes over {span:,} clocks: identical, every change on the same clock')
+        return True
+    i, a, b = diff if diff else (0, None, None)
+    print(f'{n} changes matched, then a difference at change {i}: board {a}, model {b}')
+    return False
+
+
 def cmd_peek(h, args):
     print(f'0x{h.read(int(args.addr, 0)):08x}')
     return True
@@ -274,6 +431,13 @@ def main():
     c = sub.add_parser('can')
     c.add_argument('text', nargs='?', default='rover!')
     sub.add_parser('swd')
+    p = sub.add_parser('detect')
+    p.add_argument('--pin', default='ui7')
+    p.add_argument('--seconds', type=float, default=10)
+    p.add_argument('--edges', type=int, default=2000)
+    sub.add_parser('speedrun')
+    p = sub.add_parser('lockstep')
+    p.add_argument('--changes', type=int, default=60)
     p = sub.add_parser('rgb')
     for c in 'rgb':
         p.add_argument(c, type=int)

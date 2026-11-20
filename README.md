@@ -36,6 +36,7 @@ The engines know nothing about any protocol. They offer generic pieces (shift re
 | `swd.pio` | 28 | ARM Serial Wire Debug host (reads a Cortex-M's debug port) |
 | `ir_tx.pio` | 7 | IR remote, 38 kHz carrier, any mark/space protocol (NEC encoder in `sw/pemu/ir.py`) |
 | `can_fault.pio` | 49 | CAN node with fault injection (bad CRC on demand): `sw/motor_emu.py` makes the chip an AK motor for the rover's controller |
+| `edge_capture.pio` / `pin_logger.pio` | 6 / 8 | edge timestamps for the protocol detective (`pe.py detect`); pin-change log for `pe.py lockstep` |
 | `servo.pio` | 8 | servo / ESC pulses (the tutorial's example) |
 
 The bench's three programs together fill the 64-word program memory exactly, and run at the same time.
