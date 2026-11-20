@@ -199,7 +199,8 @@ module pe_engine (
   // stall do not wait for the opcode decode that picks n for the other instructions
   wire [5:0]  n_o          = (ser_cfg & (f86 == 3'd0)) ? 6'd1 : nfld;
   wire [5:0]  nsh_o        = 6'd32 - n_o;
-  wire        out_pin1     = out_act & (f86 == 3'd0) & (n_o == 6'd1);
+  wire        n_is1        = ser_cfg | (a[4:0] == 5'd1);    // n_o == 1 when the pins are the target
+  wire        out_pin1     = out_act & (f86 == 3'd0) & n_is1;
   wire        do_stuff_out = out_pin1 & stuff_out_on & stuff_full & ~ser_clk;
   wire        osr_empty    = (osr_cnt >= pull_th);
   wire        need_pull    = out_act & autopull & osr_empty & ~do_stuff_out;
@@ -216,7 +217,7 @@ module pe_engine (
 
   // IN (an IN instruction, or the duplex sample of a clocked OUT)
   wire        in_act       = (is_in | (ser_clk & is_out & duplex)) & ph_in;
-  wire        in_pin1      = in_act & (f86 == 3'd0) & (n_o == 6'd1);
+  wire        in_pin1      = in_act & (f86 == 3'd0) & n_is1;
   wire        do_stuff_in  = in_pin1 & stuff_in_on & stuff_full & ~ser_clk;
   wire [31:0] in_data      = push_align ? 32'd0 : src_val[src_sel];
   wire [31:0] isr_shifted  = in_shr ? ((isr >> n) | (in_data << nsh))
