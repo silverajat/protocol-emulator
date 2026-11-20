@@ -29,7 +29,7 @@ jobs:
           for f in "$d"/summary.rpt "$d"/*/summary.rpt; do [ -f "$f" ] && { echo "=== $f"; cat "$f"; }; done
           for c in "$d"/nom_*; do
             for f in "$c"/max.rpt "$c"/max_*.rpt; do
-              [ -f "$f" ] && { echo "=== $f"; head -n 160 "$f"; }
+              [ -f "$f" ] && { echo "=== $f (worst path)"; awk '{print} /slack/{exit}' "$f"; }
             done
             [ -f "$c"/checks.rpt ] && { echo "=== $c/checks.rpt (slew/cap/fanout)"; head -n 60 "$c"/checks.rpt; }
           done
