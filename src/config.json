@@ -19,6 +19,11 @@
   "//": "(2x IOPadOut16mA, 1x IOPadOut4mA); they cannot be placed in the core (GRT-0010).",
   "EXTRA_EXCLUDED_CELLS": ["sg13cmos5l_IOPad*"],
 
+  "//": "Timing: Yosys's resource sharing merged the engines' IN and OUT barrel shifters into",
+  "//": "shared ones with input muxes selected by the late execute/stall decision, which put a",
+  "//": "shifter after exec on the critical path (86 logic levels; 59 without sharing, for ~12% more cells).",
+  "SYNTH_SHARE_RESOURCES": false,
+
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
   "CLOCK_PERIOD": 30,
