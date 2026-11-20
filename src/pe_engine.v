@@ -193,31 +193,20 @@ module pe_engine (
 
   // OUT
   wire        out_act      = is_out & ph_out;
-  // OUT's and IN's own bit count, decoded straight from their fields (neither is PUSH ALIGN, and
-  // each is serial exactly when SER is set and the pins are the destination/source; a duplex
-  // sample only happens on a serial OUT), so the OUT shifter, the stuff test and the autopush
-  // stall do not wait for the opcode decode that picks n for the other instructions
-  wire [5:0]  n_o          = (ser_cfg & (f86 == 3'd0)) ? 6'd1 : nfld;
-  wire [5:0]  nsh_o        = 6'd32 - n_o;
-  wire        n_is1        = ser_cfg | (a[4:0] == 5'd1);    // n_o == 1 when the pins are the target
-  wire        out_pin1     = out_act & (f86 == 3'd0) & n_is1;
+  wire        out_pin1     = out_act & (f86 == 3'd0) & (n == 6'd1);
   wire        do_stuff_out = out_pin1 & stuff_out_on & stuff_full & ~ser_clk;
   wire        osr_empty    = (osr_cnt >= pull_th);
   wire        need_pull    = out_act & autopull & osr_empty & ~do_stuff_out;
   wire [31:0] osr_src      = need_pull ? tx_head : osr;
   wire [5:0]  ocnt_base    = need_pull ? 6'd0 : osr_cnt;
-  wire [31:0] out_data     = out_shr ? (osr_src & lowmask(n_o)) : (osr_src >> nsh_o);
-  wire [31:0] osr_after    = out_shr ? (osr_src >> n_o) : (osr_src << n_o);
-  // out_data[0] when n == 1 (one bit to one pin), taken straight from the OSR end instead of
-  // through the shifter: the serial unit's stuff-bit decision (and so `done` and the PC)
-  // hangs off it
-  wire        out_bit1     = out_shr ? osr_src[0] : osr_src[31];
-  wire [6:0]  ocnt_sum     = {1'b0, ocnt_base} + {1'b0, n_o};
+  wire [31:0] out_data     = out_shr ? (osr_src & lowmask(n)) : (osr_src >> nsh);
+  wire [31:0] osr_after    = out_shr ? (osr_src >> n) : (osr_src << n);
+  wire [6:0]  ocnt_sum     = {1'b0, ocnt_base} + {1'b0, n};
   wire [5:0]  ocnt_after   = (ocnt_sum > 7'd32) ? 6'd32 : ocnt_sum[5:0];
 
   // IN (an IN instruction, or the duplex sample of a clocked OUT)
   wire        in_act       = (is_in | (ser_clk & is_out & duplex)) & ph_in;
-  wire        in_pin1      = in_act & (f86 == 3'd0) & n_is1;
+  wire        in_pin1      = in_act & (f86 == 3'd0) & (n == 6'd1);
   wire        do_stuff_in  = in_pin1 & stuff_in_on & stuff_full & ~ser_clk;
   wire [31:0] in_data      = push_align ? 32'd0 : src_val[src_sel];
   wire [31:0] isr_shifted  = in_shr ? ((isr >> n) | (in_data << nsh))
@@ -228,14 +217,14 @@ module pe_engine (
   // isr_cnt + n >= push_th  <=>  n >= push_th - isr_cnt, computed from registers alone. IN never
   // takes PUSH ALIGN's count, so its n is the serial unit's 1 or the bit-count field.
   wire [6:0]  push_room    = {1'b0, push_th} - {1'b0, isr_cnt};      // negative: past the threshold
-  wire [5:0]  n_in         = n_o;
+  wire [5:0]  n_in         = ser_on ? 6'd1 : nfld;
   wire        autopush_hit = in_act & autopush & ~do_stuff_in &
                              (push_room[6] | ({1'b0, n_in} >= push_room));
 
   // run counter after this clock's data bit (for the serial unit's trailing stuff bit)
   wire [3:0]  run_inc  = (run == 4'd15) ? 4'd15 : run + 4'd1;
-  wire [3:0]  run_nx_o = stuff_ones ? (out_bit1 ? run_inc : 4'd0)
-                                    : ((out_bit1 == last_bit && run != 4'd0) ? run_inc : 4'd1);
+  wire [3:0]  run_nx_o = stuff_ones ? (out_data[0] ? run_inc : 4'd0)
+                                    : ((out_data[0] == last_bit && run != 4'd0) ? run_inc : 4'd1);
   wire [3:0]  run_nx_i = stuff_ones ? (pins_rot[0] ? run_inc : 4'd0)
                                     : ((pins_rot[0] == last_bit && run != 4'd0) ? run_inc : 4'd1);
   wire        trail_stuff = is_out ? (stuff_out_on & (run_nx_o == stuff_n))
@@ -372,7 +361,7 @@ module pe_engine (
   always @(*) begin
     crc_feed = 1'b0;
     crc_bit  = 1'b0;
-    if (do_out & out_pin1 & tap_out)       begin crc_feed = 1'b1; crc_bit = out_bit1; end
+    if (do_out & out_pin1 & tap_out)       begin crc_feed = 1'b1; crc_bit = out_data[0]; end
     if (exec & is_out & (f86 == 3'd7))     begin crc_feed = 1'b1; crc_bit = out_data[0]; end
     if (do_in & in_pin1 & tap_in)          begin crc_feed = 1'b1; crc_bit = pins_rot[0]; end
   end
@@ -452,13 +441,13 @@ module pe_engine (
         if (do_out) begin
           osr     <= osr_after;
           osr_cnt <= ocnt_after;
-          if (out_pin1) last_out <= out_bit1;
-          if (out_pin1 & stuff_out_on) begin last_bit <= out_bit1; run <= run_nx_o; end
+          if (out_pin1) last_out <= out_data[0];
+          if (out_pin1 & stuff_out_on) begin last_bit <= out_data[0]; run <= run_nx_o; end
           case (f86)
             3'd1: x <= out_data;
             3'd2: y <= out_data;
             3'd5: pc <= out_data[5:0];
-            3'd6: begin isr <= out_data; isr_cnt <= n_o; end
+            3'd6: begin isr <= out_data; isr_cnt <= n; end
             default: ;
           endcase
         end

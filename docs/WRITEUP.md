@@ -104,13 +104,13 @@ Signed off in the worst corner (slow, 1.08 V, 125 C). Early runs at 50-60 MHz fa
 | 30 ns, resource sharing on | 2.93 ns | 37 MHz | 508 / 150 | 5h20m |
 | 30 ns, sharing off | 5.62 ns | 41 MHz | 201 / 72 | 5h04m |
 | 30 ns, sharing off + RTL path fixes | 5.92 ns | 41.5 MHz | 266 / 74 | 4h10m |
-| **22 ns, sharing off, spread placement, long-wire buffering** (RTL before the path fixes; the run with both is [pending]) | **1.26 ns** | **48 MHz** | **43 / 3** | **4h24m** |
+| **22 ns, sharing off, spread placement, long-wire buffering** (the submitted design) | **1.26 ns** | **48 MHz** | **43 / 3** | **4h24m** |
 | Typical corner in the last run | 8.82 ns | 76 MHz | | |
 
 What each step fixed:
 
 - **Resource sharing.** Yosys merged the engines' shifters into shared multiplexer "supercells" and put one after `exec`: 86 logic levels, 59 without sharing, for about 12% more cells.
-- **Two RTL path fixes**, each proven to leave every register and output unchanged (`formal/equiv.sh`, Yosys equivalence by induction against the previous commit). The serial unit's stuff-bit decision read bit 0 of the full OUT shifter although it only ever needs one bit, which put the shifter on the `done` -> PC path; it now takes the end bit of the shift register. OUT's and IN's bit count, and the "one bit to one pin" test, are decoded straight from the instruction fields instead of waiting for the opcode select that picks the count for every other instruction. Pre-layout worst path 19.3 -> 15.8 ns.
+- **Two RTL path fixes, tried and backed out.** Each was proven to leave every register and output unchanged (`formal/equiv.sh`, Yosys equivalence by induction against the previous commit). The serial unit's stuff-bit decision read bit 0 of the full OUT shifter although it only ever needs one bit, which put the shifter on the `done` -> PC path; it now takes the end bit of the shift register. OUT's and IN's bit count, and the "one bit to one pin" test, are decoded straight from the instruction fields instead of waiting for the opcode select that picks the count for every other instruction. Pre-layout worst path 19.3 -> 15.8 ns, but after routing only 0.3 ns (row 3), because wires dominate the real path. At 22 ns the layout with them overloaded Metal3, the busiest of the four signal-routing layers in this process (117% of capacity, against 96% without them), and detailed routing could not finish inside GitHub's six-hour limit. The submitted RTL is the one without them; the commits stay in the history, proven and ready if the layout side changes.
 - **Wires, not logic, were the rest.** The timing report showed a 1x AOI gate driving 373 fF through a routing detour (7.2 ns slew, 5.2 ns on one gate, about a quarter of the path). Detailed routing was congested (171 minutes). Spreading the placement to just above the 52% utilisation and letting the resizer buffer any wire over 400 um removed most slew and capacitance violations and an hour of routing.
 - **A tight target.** At 30 ns the resizer stops once the paths meet; at 22 ns it upsizes the critical ones.
 
