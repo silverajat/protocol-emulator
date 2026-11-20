@@ -48,6 +48,7 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `ir_remote_nec` | envelope decoder for a carrier-modulated pin | 50% duty carrier; NEC leader, 32 bits and inverted-byte checks decode to the sent address and command |
 | `swd_debug_port` | ARM SW-DP model: JTAG-to-SWD select, line reset, request parity, ACK, turnarounds, DP registers | IDCODE 0x2BA01477 read; CTRL/STAT power-up written (parity checked by the target) and its acknowledge read back |
 | `dmx512_packet` | waveform decoder with the DMX512 timing limits | BREAK >= 88 us, MARK AFTER BREAK >= 8 us, start code and channels 8N2, two packets back to back |
+| `crc32_ethernet` | Python `zlib.crc32` | the CRC unit at its full 32-bit width with reflected input and output: five messages bit-exact (found missing by the coverage report: the top CRC bit had never moved) |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 
 ## 4. Gate level
@@ -79,11 +80,15 @@ Together: **a pin changes only when an engine whose own windows include it write
 
 | | Bits | Toggled both ways |
 |---|---|---|
-| Whole design | COV_TOTAL | COV_PCT |
-| Engines (3 instances) | COV_ENG_TOTAL | COV_ENG_PCT |
-| Host SPI port | COV_HOST_TOTAL | COV_HOST_PCT |
+| Whole design, every instance counted | 5,107 | 99.0% |
+| Engines (3 instances) | 4,128 | 98.8% |
+| Host SPI port | 166 | 100% |
+| Core glue (program memory, pins, events, TIME) | 333 | 100% |
+| Engine logic, the three copies merged | 2,035 | 2,034 bits (99.95%) |
 
-What it found: the clock dividers' and bit timers' upper bits had never moved (fixed by `diff_wide_ranges`); the host port had never seen an address above 0x3F (now tested: unmapped addresses read 0); and the host port's bit counter has a spare flip-flop that can never be set (it counts to 31 in a 6-bit register), left for the next RTL revision. COV_REMAIN
+Run it with `sh tools/coverage.sh` (every test module with its own dump, then the merge).
+
+What it found: the clock dividers' and bit timers' upper bits had never moved (fixed by `diff_wide_ranges`); the host port had never seen an address above 0x3F (now tested: unmapped addresses read 0); and the host port's bit counter has a spare flip-flop that can never be set (it counts to 31 in a 6-bit register), left for the next RTL revision; the CRC unit had never run at 32 bits (now `crc32_ethernet`, bit-exact with zlib). The one engine bit no test moves is the stuffer's run counter reaching 8, which needs `STUFF_N` >= 8 and eight equal output bits in a row; the copies that miss individual bits (e.g. engine 2's bit timer top bits) are covered in another engine.
 
 **Functional coverage**: the model counts what the fuzzer executed (every opcode, paced instructions, stuff bits in and out, CRC feeds, autopull/autopush, serial and clocked bits); the fuzz test fails if any count is zero.
 

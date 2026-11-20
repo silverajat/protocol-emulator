@@ -54,6 +54,7 @@ Details: [ISA.md](ISA.md). In short, an engine executes one instruction per tick
 | `manchester_tx.pio` / `manchester_rx.pio` | 12 / 12 | Manchester (IEEE 802.3 coding, as DALI and 10BASE-T): the receiver recovers the clock from the data, no bit timer |
 | `ir_tx.pio` | 7 | IR remote on a 38 kHz carrier: any mark/space protocol; NEC encoder on the host |
 | `dmx_tx.pio` | 15 | DMX512 stage lighting: break, mark-after-break, 8N2 at 250 kbit/s |
+| `crc32.pio` | 8 | CRC-32 of a byte stream (Ethernet, zip, PNG), bit-exact with zlib |
 | `swd.pio` | 28 | ARM Serial Wire Debug host: reads a Cortex-M's debug port (STM32 IDCODE), one wire that turns around inside every transaction |
 
 ### Flexibility: protocols added after the hardware was finished

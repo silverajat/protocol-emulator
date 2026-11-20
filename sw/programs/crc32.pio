@@ -1,0 +1,18 @@
+; CRC-32 as used by Ethernet, zip and PNG (zlib.crc32), computed by the CRC unit: a check
+; that the unit is general (any width up to 32, any polynomial, reflected or not).
+; Config: CRC_POLY = 0x04C11DB7, CRC width 32, OUT_SHR (each byte LSB first: reflected input),
+;         AUTOPULL with PULL_THRESH 32.
+; Host: the number of data bits - 1, then the data packed little-endian into words;
+;       reads back the CRC.
+.program crc32
+.wrap_target
+    pull block
+    out x, 32
+    set crc, 1              ; initial value all ones
+bit:
+    out crc, 1
+    jmp x--, bit
+    mov y, ::crc            ; reflected output ...
+    mov isr, ~y             ; ... and the final XOR with all ones
+    push block
+.wrap

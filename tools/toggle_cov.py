@@ -2,7 +2,8 @@
 """Toggle coverage from a simulation dump: for every bit of every net and register in the
 design, did it go both 0 -> 1 and 1 -> 0? Reads FST/VCD with pywellen (pip install pywellen).
 
-  python tools/toggle_cov.py test/tb.fst [--scope tb.user_project] [--list N]
+  python tools/toggle_cov.py test/cov/*.fst [--min 98] [--list N]
+  (tools/coverage.sh runs every test module with a dump of its own and reports)
 
 Instances of the same module are merged (the second core the fuzzer drives counts with the
 chip's own), so the report is per signal of the design, not per copy. X and Z are not toggles.
@@ -38,55 +39,53 @@ def to_int(v, width):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('dump')
+    ap.add_argument('dump', nargs='+', help='one or more FST/VCD files (coverage is merged)')
     ap.add_argument('--scope', action='append',
                     help='instance(s) of the core to merge (default: the chip and the fuzzer core)')
     ap.add_argument('--list', type=int, default=40, help='show this many uncovered signals')
     ap.add_argument('--min', type=float, default=0, help='exit with an error below this percentage')
     args = ap.parse_args()
     scopes = args.scope or ['tb.user_project', 'tb']
-    w = pywellen.Waveform(args.dump)
-    by_id = {}
-    for v in w.all_vars():
-        if v.is_real or v.is_string or str(v.var_type) in ('Parameter', 'Integer'):
-            continue
-        if re.search(r'\.(window|bitrev|lowmask)\.', v.full_name):
-            continue                                   # function-local temporaries
-        c = canon(v.full_name, scopes)
-        if c is None or '.' not in c and scopes[-1] == 'tb' and not c.startswith('c_'):
-            continue                                   # testbench wires
-        if c.startswith('c_'):
-            continue                                   # the fuzzer core's ports (tb wires)
-        sid = str(v.signal_id)
-        by_id.setdefault(sid, []).append((c, v.bitwidth))
     width = {}
-    for lst in by_id.values():
-        for c, n in lst:
-            width[c] = n
     rise = defaultdict(int)
     fall = defaultdict(int)
-    prev = {}
+    for dump in args.dump:
+        w = pywellen.Waveform(dump)
+        by_id = {}
+        for v in w.all_vars():
+            if v.is_real or v.is_string or str(v.var_type) in ('Parameter', 'Integer'):
+                continue
+            if re.search(r'\.(window|bitrev|lowmask)\.', v.full_name):
+                continue                               # function-local temporaries
+            c = canon(v.full_name, scopes)
+            if c is None or '.' not in c and scopes[-1] == 'tb' and not c.startswith('c_'):
+                continue                               # testbench wires
+            if c.startswith('c_'):
+                continue                               # the fuzzer core's ports (tb wires)
+            by_id.setdefault(str(v.signal_id), []).append((c, v.bitwidth))
+        for lst in by_id.values():
+            for c, n in lst:
+                width[c] = n
+        prev = {}
 
-    def cb(t, sid, value):
-        sid = str(sid)
-        lst = by_id.get(sid)
-        if not lst:
-            return
-        n = lst[0][1]
-        val, known = to_int(value, n)
-        p = prev.get(sid)
-        prev[sid] = (val, known)
-        if p is None:
-            return
-        pv, pk = p
-        k = known & pk
-        ch = (val ^ pv) & k
-        if ch:
-            for c, _ in lst:
-                rise[c] |= ch & val
-                fall[c] |= ch & pv
+        def cb(t, sid, value):
+            sid = str(sid)
+            lst = by_id.get(sid)
+            if not lst:
+                return
+            val, known = to_int(value, lst[0][1])
+            p = prev.get(sid)
+            prev[sid] = (val, known)
+            if p is None:
+                return
+            pv, pk = p
+            ch = (val ^ pv) & known & pk
+            if ch:
+                for c, _ in lst:
+                    rise[c] |= ch & val
+                    fall[c] |= ch & pv
 
-    w.stream_changes(cb, [v for v in w.all_vars() if str(v.signal_id) in by_id])
+        w.stream_changes(cb, [v for v in w.all_vars() if str(v.signal_id) in by_id])
     excl = []
     import os
     xf = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'toggle_cov_exclude.txt')

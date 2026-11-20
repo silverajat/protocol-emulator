@@ -267,3 +267,27 @@ async def dmx512_packet(dut):
         got[-1].append(b)
         i += bit * 10
     assert got == packets, got
+
+
+@cocotb.test()
+async def crc32_ethernet(dut):
+    """The CRC unit at full width: CRC-32 (Ethernet / zip / PNG) of messages, checked against zlib."""
+    import zlib
+    chip = await setup(dut)
+    p = prog('crc32', 0)
+    await chip.load(0, EngineConfig(out_shr=True, autopull=True, pull_thresh=0,
+                                    crc_poly=0x04C11DB7, crc_width=32), p)
+    await chip.write(R.CTRL, 0x11)
+    for msg in [b'123456789', b'\x00' * 8, b'\xff' * 12, bytes(range(32)), b'rover']:
+        data = msg + b'\x00' * (-len(msg) % 4)
+        words = [8 * len(msg) - 1] + [int.from_bytes(data[i:i + 4], 'little') for i in range(0, len(data), 4)]
+        for wd in words:
+            while (await chip.read(R.STATUS)) >> 3 & 1:
+                await ClockCycles(dut.clk, 20)
+            await chip.write(R.TXF(0), wd)
+        for _ in range(200):
+            if not (await chip.read(R.STATUS)) & 1:
+                break
+            await ClockCycles(dut.clk, 50)
+        got = await chip.read(R.RXF(0))
+        assert got == zlib.crc32(msg), (msg, hex(got), hex(zlib.crc32(msg)))
