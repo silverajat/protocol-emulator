@@ -31,7 +31,9 @@ jobs:
             for f in "$c"/max.rpt "$c"/max_*.rpt; do
               [ -f "$f" ] && { echo "=== $f"; head -n 160 "$f"; }
             done
+            [ -f "$c"/checks.rpt ] && { echo "=== $c/checks.rpt (slew/cap/fanout)"; head -n 60 "$c"/checks.rpt; }
           done
+          exit 0
 
   precheck:
     needs: gds
