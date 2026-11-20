@@ -35,6 +35,7 @@ The engines know nothing about any protocol. They offer generic pieces (shift re
 | `crc32.pio` | 8 | CRC-32 (Ethernet / zip / PNG) with the CRC unit |
 | `swd.pio` | 28 | ARM Serial Wire Debug host (reads a Cortex-M's debug port) |
 | `ir_tx.pio` | 7 | IR remote, 38 kHz carrier, any mark/space protocol (NEC encoder in `sw/pemu/ir.py`) |
+| `can_fault.pio` | 49 | CAN node with fault injection (bad CRC on demand): `sw/motor_emu.py` makes the chip an AK motor for the rover's controller |
 | `servo.pio` | 8 | servo / ESC pulses (the tutorial's example) |
 
 The bench's three programs together fill the 64-word program memory exactly, and run at the same time.

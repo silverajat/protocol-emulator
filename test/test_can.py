@@ -235,3 +235,67 @@ async def can_two_engines_one_wire(dut):
                 break
     got = decode(words)
     assert got.crc_ok and got.ident == 0x0A5 and got.data == b'rover!'
+
+
+@cocotb.test()
+async def emulated_motor_hardware_in_the_loop(dut):
+    """The chip emulates a CubeMars AK80-8 for the rover's controller (a model CAN node): the
+    controller enables it and commands a velocity; the emulated wheel speeds up in the replies.
+    Then faults: replies with a corrupted CRC (the controller rejects them and does not ACK),
+    and the motor going offline (the controller's commands go unACKed)."""
+    from pemu import ak
+    from pemu.motor_emu import EmulatedMotor
+    from pemu.can import tx_words
+    prog_f = prog('can_fault', origin=0)
+    chip = await setup(dut)
+    bus = CanBus(dut, chip, BIT)
+    rover = CanNode(bus, 'rover')
+    await chip.load(0, can_cfg().for_program(prog_f), prog_f)
+    await chip.write(R.CTRL, 0x11)
+    motor = EmulatedMotor(motor_id=1)
+    t = [0.0]
+
+    async def exchange(cmd):
+        """The controller sends cmd; the host behind the chip answers as the motor."""
+        n_rx = len(rover.rx)
+        rover.queue.append(cmd)
+        got = await chip_recv(chip)
+        t[0] += 0.005
+        reply, _, bad = motor.handle(got, now=t[0])
+        if reply is not None:
+            for w in tx_words(reply, corrupt_crc=bad):
+                while (await chip.read(R.STATUS)) & 8:
+                    pass
+                await chip.write(R.TXF(0), w)
+            res = await chip_tx_result(chip)
+            await chip.write(R.EVENTS, 0)
+        else:
+            res = None
+        for _ in range(200):                      # the reply reaches the controller
+            if len(rover.rx) >= n_rx + (2 if reply else 1):
+                break
+            await ClockCycles(dut.clk, 4 * BIT)
+        return res, rover.rx[-1][0] if reply else None
+
+    await exchange(ak.special(1, ak.ENTER))
+    speeds = []
+    for _ in range(12):
+        res, rep = await exchange(ak.command(1, v=6.0, kd=2.0))
+        assert res == 2 and rep.crc_ok, (res, rep)
+        speeds.append(ak.reply(rep)['v'])
+    assert speeds[-1] > speeds[0] + 2 and all(b >= a - 1e-6 for a, b in zip(speeds, speeds[1:])), speeds
+
+    motor.set_fault('bad-crc')
+    res, rep = await exchange(ak.command(1, v=6.0, kd=2.0))
+    assert res == 4, 'a corrupted reply was ACKed'
+    assert not rep.crc_ok, 'the controller accepted a corrupted reply'
+
+    motor.set_fault('offline')
+    await chip.write(R.CTRL, 0x00)                # the emulated motor drops off the bus
+    rover.queue.append(ak.command(1, v=6.0, kd=2.0))
+    for _ in range(200):
+        if rover.sent and rover.sent[-1][1] == 'noack':
+            break
+        await ClockCycles(dut.clk, 4 * BIT)
+    assert rover.sent[-1][1] == 'noack', rover.sent[-1]
+    dut._log.info(f'emulated wheel speed in the replies: {[round(s, 2) for s in speeds]} rad/s')

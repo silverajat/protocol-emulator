@@ -65,3 +65,11 @@ The LED board's IR receiver and RGB strip are wired to the FPGA, so with the str
 - `python sw/pe.py remote` — every button picks a colour. Film it: remote in hand, strip changing, the terminal printing the codes.
 
 This needs the new FPGA image: run `gate1_run.bat` once (it flashes the ESP32, which loads the FPGA at power-up).
+
+## 7. The chip as the rover's motor (hardware in the loop)
+
+Same wiring as section 1, but the CAN transceiver goes to the rover's controller bus instead of the motor, and the real motor with that ID unplugged (or pick a spare ID).
+
+- `python sw/motor_emu.py --id 1` — the controller now sees motor 1 answering. Drive the rover software as usual.
+- While it runs, type a fault and Enter: `bad-crc`, `late 20`, `drop 3`, `stuck`, `overtemp`, `offline`, `none`. Watch what the rover's software does (does it notice? stop? retry?). `motor_emu_log.csv` records every command and reply.
+- Film: the controller's UI/terminal, then typing `offline` and the rover software reacting.

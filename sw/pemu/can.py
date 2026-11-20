@@ -68,10 +68,11 @@ class Frame:
         return stuff(self.bits()) + [1, 1, 1] + [1] * 7
 
 
-def tx_words(frame):
-    """Words to push into the CAN engine's TX FIFO for one frame."""
+def tx_words(frame, corrupt_crc=False):
+    """Words to push into the CAN engine's TX FIFO for one frame. corrupt_crc (can_fault.pio
+    only) sends the frame with its CRC inverted."""
     h = frame.head_bits()
-    words = [len(h) - 1]
+    words = [(len(h) - 1) | (int(corrupt_crc) << 31)]
     for i in range(0, len(h), 32):
         chunk = h[i:i + 32]
         words.append(sum(b << k for k, b in enumerate(chunk)))

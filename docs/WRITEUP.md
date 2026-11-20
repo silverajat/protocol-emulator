@@ -46,6 +46,7 @@ Details: [ISA.md](ISA.md). In short, an engine executes one instruction per tick
 | Program | Words | |
 |---|---|---|
 | `can.pio` | 45 | CAN 2.0A/B node: RX + ACK every good frame, TX with arbitration and ACK check, SOF timestamps |
+| `can_fault.pio` | 49 | the CAN node plus fault injection (a frame sent with its CRC inverted), for device emulation |
 | `i2c_master.pio` | 13 | START / repeated START / STOP, ACK/NACK, clock stretching |
 | `spi_master.pio` | 6 | Any mode, full duplex, any length |
 | `uart_tx.pio` / `uart_rx.pio` | 6 / 10 | 8N1, edge-locked receiver, framing errors |
@@ -69,6 +70,8 @@ Nine programs were written after the RTL was done, without touching it, each nee
 **Remote-controlled room lights** (no extra parts): the LED board's IR receiver and RGB strip are wired to the FPGA playing the chip. `pe.py remote`: engine 0 decodes any NEC remote (a light strip's own remote here), engine 1 runs the strip's PWM; every button picks a colour. Two protocols the chip was not designed for, against a device from another maker.
 
 **Remote-controlled rover** (`test_bench.remote_rover_bench`): the same remote, decoded on one engine, becomes CubeMars CAN commands from a second while the third samples motor current on the MCP3208: CAN 45 + IR 14 + SPI 4 = 63 of 64 words.
+
+**Emulating the motor (hardware in the loop)** (`sw/motor_emu.py`, `test_can.emulated_motor_hardware_in_the_loop`): the reverse of the bench. The chip *is* an AK80-8 on the rover's CAN bus: it ACKs the controller's MIT commands and answers with position, velocity and torque from a wheel model on the laptop, so the rover's firmware can be tested with no motor, by anyone, repeatably. Faults are switched on while it runs: replies with a corrupted CRC (sent by the chip, at the bit level), late replies, dropped replies, a frozen encoder, over-temperature, or the motor dropping off the bus entirely (no ACKs). These are failures that are hard to provoke with a real motor and that a controller has to survive. **[on the rover: what the controller did under each fault]**
 
 ### The rover drive-train bench
 

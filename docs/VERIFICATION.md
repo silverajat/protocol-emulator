@@ -51,6 +51,7 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `crc32_ethernet` | Python `zlib.crc32` | the CRC unit at its full 32-bit width with reflected input and output: five messages bit-exact (found missing by the coverage report: the top CRC bit had never moved) |
 | `ir_remote_receive_and_rgb` | NEC remote waveforms as an IR receiver module outputs them; duty-cycle measurement of three pins | frames decoded; held-button repeat codes and data-length glitches produce no words; three RGB colours' duty within 2/255 |
 | `remote_rover_bench` | IR remote + CubeMars motor + MCP3208 | a button press decoded on one engine while another samples the ADC, then a CAN command ACKed and answered; 63 of 64 words |
+| `emulated_motor_hardware_in_the_loop` | a model rover controller (CAN node) commanding an AK motor that the chip emulates | enter motor mode, 12 velocity commands with the emulated wheel speeding up in the replies; a corrupted-CRC reply rejected (no ACK, the chip reports it); the emulated motor going offline (the controller's command unACKed) |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 
 ## 4. Gate level
