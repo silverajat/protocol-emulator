@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1d3b2f"/>
+    </marker>
+    <style>
+      .box{fill:#ffffff;stroke:#1d3b2f;stroke-width:1.5}
+      .eng{fill:#eef6f1;stroke:#0f5c3f;stroke-width:1.5}
+      .unit{fill:#ffffff;stroke:#7aa58f;stroke-width:1}
+      .mem{fill:#fff4e6;stroke:#b0681f;stroke-width:1.5}
+      .pin{fill:#f7efe2;stroke:#b0681f;stroke-width:1.2}
+      .t{fill:#14231b}
+      .h{fill:#14231b;font-weight:bold;font-size:15px}
+      .s{fill:#566a5f;font-size:11.5px}
+      .ln{stroke:#1d3b2f;stroke-width:1.4;fill:none;marker-end:url(#a)}
+      .bus{stroke:#b0681f;stroke-width:3;fill:none}
+    </style>
+  </defs>
+  <rect width="960" height="560" fill="#f4f2ec"/>
+  <text x="24" y="34" class="h" font-size="18">Protocol Emulator: one chip, every protocol in software</text>
+  <text x="24" y="54" class="s">IHP 130 nm, Tiny Tapeout 8x4 tiles. Nothing below knows any protocol; programs (4-49 words) do.</text>
+
+  <!-- host -->
+  <rect x="24" y="90" width="150" height="70" rx="8" class="box"/>
+  <text x="99" y="118" text-anchor="middle" class="h">Host MCU</text>
+  <text x="99" y="138" text-anchor="middle" class="s">laptop via ESP32</text>
+  <rect x="24" y="200" width="150" height="88" rx="8" class="box"/>
+  <text x="99" y="226" text-anchor="middle" class="h">Host SPI port</text>
+  <text x="99" y="246" text-anchor="middle" class="s">registers, program</text>
+  <text x="99" y="262" text-anchor="middle" class="s">memory, FIFOs, events,</text>
+  <text x="99" y="278" text-anchor="middle" class="s">IRQ</text>
+  <path d="M99,160 L99,198" class="ln"/>
+  <path d="M174,244 L230,244" class="ln"/>
+
+  <!-- program memory -->
+  <rect x="232" y="84" width="470" height="44" rx="8" class="mem"/>
+  <text x="467" y="104" text-anchor="middle" class="h">Program memory: 64 x 16-bit, shared</text>
+  <text x="467" y="120" text-anchor="middle" class="s">CAN 45 + I2C 13 + SPI 6 = 64: the whole rover bench at once</text>
+
+  <!-- engines -->
+  <g>
+    <rect x="232" y="150" width="148" height="248" rx="10" class="eng"/>
+    <text x="306" y="172" text-anchor="middle" class="h">Engine 0</text>
+    <rect x="244" y="182" width="124" height="22" class="unit"/><text x="306" y="197" text-anchor="middle" class="t">PC, X, Y, OSR, ISR</text>
+    <rect x="244" y="208" width="124" height="22" class="unit"/><text x="306" y="223" text-anchor="middle" class="t">TX + RX FIFOs (4)</text>
+    <rect x="244" y="234" width="124" height="22" class="unit"/><text x="306" y="249" text-anchor="middle" class="t">bit timer + resync</text>
+    <rect x="244" y="260" width="124" height="22" class="unit"/><text x="306" y="275" text-anchor="middle" class="t">serial unit (clock)</text>
+    <rect x="244" y="286" width="124" height="22" class="unit"/><text x="306" y="301" text-anchor="middle" class="t">bit stuffer</text>
+    <rect x="244" y="312" width="124" height="22" class="unit"/><text x="306" y="327" text-anchor="middle" class="t">CRC (1-32 bit)</text>
+    <rect x="244" y="338" width="124" height="22" class="unit"/><text x="306" y="353" text-anchor="middle" class="t">bus monitor</text>
+    <text x="306" y="384" text-anchor="middle" class="s">e.g. CAN node</text>
+  </g>
+  <g>
+    <rect x="393" y="150" width="148" height="248" rx="10" class="eng"/>
+    <text x="467" y="172" text-anchor="middle" class="h">Engine 1</text>
+    <rect x="405" y="182" width="124" height="178" class="unit" fill-opacity="0.6"/>
+    <text x="467" y="265" text-anchor="middle" class="s">the same pieces</text>
+    <text x="467" y="384" text-anchor="middle" class="s">e.g. I2C master</text>
+  </g>
+  <g>
+    <rect x="554" y="150" width="148" height="248" rx="10" class="eng"/>
+    <text x="628" y="172" text-anchor="middle" class="h">Engine 2</text>
+    <rect x="566" y="182" width="124" height="178" class="unit" fill-opacity="0.6"/>
+    <text x="628" y="265" text-anchor="middle" class="s">the same pieces</text>
+    <text x="628" y="384" text-anchor="middle" class="s">e.g. SPI master</text>
+  </g>
+  <path d="M306,128 L306,148" class="ln"/><path d="M467,128 L467,148" class="ln"/><path d="M628,128 L628,148" class="ln"/>
+
+  <!-- TIME -->
+  <rect x="232" y="414" width="704" height="34" rx="8" class="box"/>
+  <text x="248" y="436" class="t" font-weight="bold">TIME</text><text x="292" y="436" class="t">one 32-bit cycle counter shared by all engines: frames, samples, edges on one clock</text>
+
+  <!-- pin router -->
+  <rect x="726" y="150" width="210" height="248" rx="10" class="pin"/>
+  <text x="831" y="174" text-anchor="middle" class="h">Pins</text>
+  <text x="831" y="196" text-anchor="middle" class="s">OUT / SET windows per engine</text>
+  <text x="831" y="212" text-anchor="middle" class="s">(proved: an engine only ever</text>
+  <text x="831" y="228" text-anchor="middle" class="s">claims pins in its windows)</text>
+  <text x="831" y="256" text-anchor="middle" class="t">14 outputs, 13 inputs</text>
+  <text x="831" y="276" text-anchor="middle" class="t">uio0-7 bidirectional,</text>
+  <text x="831" y="296" text-anchor="middle" class="t">open-drain per pin</text>
+  <text x="831" y="320" text-anchor="middle" class="s">2-flop input synchronisers</text>
+  <path d="M702,274 L724,274" class="bus"/>
+  <path d="M936,214 L950,214 M936,244 L950,244 M936,274 L950,274 M936,304 L950,304 M936,334 L950,334" class="bus"/>
+
+  <!-- protocols -->
+  <text x="24" y="488" class="h">Programs so far</text>
+  <text x="24" y="510" class="t">CAN (with arbitration, ACK, timestamps, fault injection) - I2C - SPI - UART - WS2812 - 1-Wire - Manchester - NEC IR (TX, RX)</text>
+  <text x="24" y="530" class="t">ARM SWD - DMX512 - RGB PWM - servo - CRC-32 - edge recorder - pin logger</text>
+  <text x="24" y="550" class="s">Most were written after the hardware was frozen.</text>
+</svg>

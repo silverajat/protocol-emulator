@@ -10,6 +10,8 @@ Every wire protocol is a few things: bits that leave and arrive at the right mom
 
 ## 2. Architecture
 
+![Architecture](img/architecture.svg)
+
 ```
             host MCU (RP2350 / ESP32)
                  |  SPI: registers, program memory, FIFOs

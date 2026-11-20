@@ -15,6 +15,8 @@ A Tiny Tapeout chip (IHP 130 nm, 8x4 tiles) with three programmable timing engin
 | Tests | [test/](test/) (cocotb), [sw/test_tools.py](sw/test_tools.py) (pytest) |
 | LED-board prototype (FPGA plays the chip) | [fpga/](fpga/), [esp32/pe_bridge/](esp32/pe_bridge/) |
 
+![Architecture](docs/img/architecture.svg)
+
 ## What one engine can be
 
 The engines know nothing about any protocol. They offer generic pieces (shift registers, FIFOs, a bit timer that locks onto bus edges, two pacing points per bit, a bit stuffer, a CRC unit, a clocked serial shifter, bus monitoring), and the protocol lives in a few words of program:
