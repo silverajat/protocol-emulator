@@ -7,6 +7,8 @@ on:
 jobs:
   gds:
     runs-on: ubuntu-24.04
+    env:
+      COLUMNS: 220            # so LibreLane's summary tables (timing per corner) aren't cut off
     steps:
       - name: checkout repo
         uses: actions/checkout@v6
@@ -17,6 +19,19 @@ jobs:
         uses: TinyTapeout/tt-gds-action@ttihp27a
         with:
           pdk: ihp-sg13cmos5l # or ihp-sg13g2
+
+      - name: Timing report (worst paths per corner)
+        if: always()
+        run: |
+          d=$(ls -d runs/wokwi/*-openroad-stapostpnr 2>/dev/null | tail -1)
+          [ -n "$d" ] || { echo "no post-PnR STA directory"; exit 0; }
+          find "$d" -maxdepth 2 -type f | sort
+          for f in "$d"/summary.rpt "$d"/*/summary.rpt; do [ -f "$f" ] && { echo "=== $f"; cat "$f"; }; done
+          for c in "$d"/nom_*; do
+            for f in "$c"/max.rpt "$c"/max_*.rpt; do
+              [ -f "$f" ] && { echo "=== $f"; head -n 160 "$f"; }
+            done
+          done
 
   precheck:
     needs: gds

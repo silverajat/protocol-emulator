@@ -79,7 +79,15 @@ The first complete design (4 engines, configuration and program memory readable)
 | IN and MOV share one source multiplexer | ~5k um^2 per engine |
 | The serial unit added back (+5%) | it made every program 2-4x shorter, which is what lets the bench fit in 64 words |
 
-Result: 51% utilisation of the 1.21 mm^2 core, 3,286 flip-flops. The first complete hardening (LibreLane, IHP SG13CMOS5L) routed with zero detailed-routing violations and passed DRC, LVS and antenna checks, but missed setup timing at 60 MHz in the slow (1.08 V, 125 C) and typical corners once real wire delays were known (before routing the resizer reported no violations; global routing was congested around the shared program memory read port). The clock target was relaxed to 50 MHz (20 ns), which costs nothing in function: every protocol's timing is a configuration value, and CAN at 1 Mbit/s is 50 clocks per bit. **[final timing slack, GDS render]**
+Result: 51% utilisation of the 1.21 mm^2 core, 3,286 flip-flops. Every hardening so far (LibreLane, IHP SG13CMOS5L) has routed with zero detailed-routing violations and passed DRC, LVS and antenna checks; timing has been the fight:
+
+| Clock target | Typical (1.2 V, 25 C) | Slow (1.08 V, 125 C) | Fast |
+|---|---|---|---|
+| 60 MHz (16.6 ns) | ~3 failing paths | fails | passes |
+| 50 MHz (20 ns) | passes (slack > 1 ns) | ~30+ failing paths | passes |
+| 33 MHz (30 ns) | **[pending]** | **[pending]** | **[pending]** |
+
+Before routing the resizer saw no violations; the losses come from wire delay across a congested core (global routing was congested around the shared program-memory read port). Signing off in the worst corner at a lower clock costs nothing in function: every protocol's timing is a configuration value, and CAN at 1 Mbit/s is still 33 clocks per bit. **[the critical path from the timing report, and whether an RTL change before the freeze buys the clock back]**
 
 ## 7. Verification
 
