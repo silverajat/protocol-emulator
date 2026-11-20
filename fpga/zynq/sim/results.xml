@@ -1,0 +1,6 @@
+<testsuites name="results">
+  <testsuite name="all" package="all">
+    <property name="random_seed" value="1795147684" />
+    <testcase name="four_chip_can_network" classname="test_network" file="/home/claude/protocol-emulator/fpga/zynq/sim/test_network.py" lineno="85" time="51.72078561782837" sim_time_ns="4777008.0" ratio_time="92361.47407539273" />
+  </testsuite>
+</testsuites>

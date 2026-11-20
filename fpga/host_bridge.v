@@ -11,6 +11,7 @@
  *   0x5B            pulse the chip reset
  *   0x5C            read the chip IRQ pin
  *   0x5D m          stream: keep popping the RX FIFOs of the engines in mask m (0 = stop)
+ *   0x5E c          select chip c for what follows (boards with several chips; sel output)
  * Messages to the ESP32 (type, length, payload):
  *   0xA5 n m1..mn   the MISO bytes of a transaction
  *   0xA6 1 irq
@@ -36,7 +37,8 @@ module host_bridge #(
     output reg  mosi,
     input  wire miso,
     input  wire irq,
-    output wire chip_rst_n
+    output wire chip_rst_n,
+    output reg  [1:0] sel = 2'd0  // which chip the SPI port, IRQ and reset address (0x5E)
 );
 
   // ---------------- UART receiver -> 32-byte input queue ----------------
@@ -135,7 +137,7 @@ module host_bridge #(
     S_IDLE = 5'd0,  S_CMD = 5'd1,  S_LEN = 5'd2,  S_TBYTE = 5'd3, S_TDONE = 5'd4,
     S_END  = 5'd5,  S_RST = 5'd6,  S_MASK = 5'd7, S_PUSH = 5'd8,  S_XFER = 5'd9,
     S_EMIT0 = 5'd10, S_EMIT = 5'd11, S_POLL = 5'd12, S_PDATA = 5'd13, S_PGOT = 5'd14,
-    S_PEND = 5'd15, S_PE = 5'd16;
+    S_PEND = 5'd15, S_PE = 5'd16, S_SEL = 5'd17;
   reg [4:0]  st = S_IDLE, ret = S_IDLE, after = S_IDLE;
   reg [7:0]  cmd = 0;
   reg [7:0]  left = 0;        // transaction bytes still to transfer
@@ -182,12 +184,18 @@ module host_bridge #(
             8'h5C: begin msg[0] <= 8'hA6; msg[1] <= 8'h01; msg[2] <= {7'd0, irq}; msg_len <= 3'd3;
                          k <= 0; after <= S_IDLE; st <= S_PUSH; end
             8'h5D: st <= S_MASK;
+            8'h5E: st <= S_SEL;
             default: st <= S_IDLE;
           endcase
         end
         S_MASK: begin
           tmo <= tmo - 16'd1;
           if (iq_n != 0 && !iq_pop) begin mask <= iq_head[2:0]; iq_pop <= 1'b1; st <= S_IDLE; end
+          else if (tmo == 0) st <= S_IDLE;
+        end
+        S_SEL: begin
+          tmo <= tmo - 16'd1;
+          if (iq_n != 0 && !iq_pop) begin sel <= iq_head[1:0]; iq_pop <= 1'b1; st <= S_IDLE; end
           else if (tmo == 0) st <= S_IDLE;
         end
         S_PUSH: begin                              // queue msg[0 .. msg_len-1]
