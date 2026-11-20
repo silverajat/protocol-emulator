@@ -35,13 +35,16 @@ The engines know nothing about any protocol. They offer generic pieces (shift re
 | `crc32.pio` | 8 | CRC-32 (Ethernet / zip / PNG) with the CRC unit |
 | `swd.pio` | 28 | ARM Serial Wire Debug host (reads a Cortex-M's debug port) |
 | `ir_tx.pio` | 7 | IR remote, 38 kHz carrier, any mark/space protocol (NEC encoder in `sw/pemu/ir.py`) |
+| `servo.pio` | 8 | servo / ESC pulses (the tutorial's example) |
 
 The bench's three programs together fill the 64-word program memory exactly, and run at the same time.
+
+**Write your own:** [docs/TUTORIAL.md](docs/TUTORIAL.md) adds a protocol from scratch in about 20 minutes, and `python sw/pesim.py PROGRAM.pio --cfg ... --vcd out.vcd` runs any program on the golden model with a waveform out (no hardware, no Verilog simulator).
 
 ## Run the tests
 
 ```
-cd test && make                    # 20 cocotb tests: RTL vs golden model, protocols vs device models
+cd test && make                    # 30+ cocotb tests: RTL vs golden model, protocols vs device models
 python -m pytest sw/test_tools.py  # assembler, CAN helpers, pe.py demos on a virtual board
 python sw/pe.py --sim can          # any pe.py demo, on the golden model (no hardware)
 ```

@@ -1,0 +1,17 @@
+; Hobby servo / ESC pulse (the tutorial's example, docs/TUTORIAL.md): a high pulse of 1-2 ms
+; every 20 ms. The host sends both times in one word; the pulse repeats until the next word.
+; Config: SET window = the servo pin, OUT_SHR (the high time is the low half); tick = 1 us (CLKDIV = clock / 1 MHz - 1: 26 at 27 MHz).
+; Host word: [15:0] = high ticks - 3, [31:16] = low ticks - 5 (sw/pemu/servo.py word()).
+.program servo
+.wrap_target
+    pull noblock            ; a new word, or the last one again (X)
+    mov x, osr              ; keep it for the next period
+    out y, 16               ; high time
+    set pins, 1
+hi:
+    jmp y--, hi
+    out y, 16               ; low time
+    set pins, 0
+lo:
+    jmp y--, lo
+.wrap

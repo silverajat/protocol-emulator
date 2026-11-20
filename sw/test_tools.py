@@ -91,3 +91,14 @@ def test_ak_mit_frames():
 def test_bench_help():
     r = subprocess.run([sys.executable, os.path.join(HERE, 'bench.py'), '--help'], capture_output=True, text=True)
     assert r.returncode == 0 and 'SN65HVD230' in r.stdout
+
+
+def test_pesim_servo_timing():
+    """The tutorial's measurement: pesim on the model gives high = Y + 3, low = Y + 5."""
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    out = subprocess.run([sys.executable, os.path.join(here, 'pesim.py'),
+                          os.path.join(here, 'programs', 'servo.pio'), '--cfg', 'set=uo2', 'out_shr=1',
+                          '--send', '0x0050000c', '--cycles', '320'],
+                         capture_output=True, text=True, check=True).stdout
+    assert 'uo2: 8 edges at cycles 7, 12, 27, 112, 127, 212, 227, 312' in out, out

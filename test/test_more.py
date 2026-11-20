@@ -350,3 +350,35 @@ async def ir_remote_receive_and_rgb(dut):
                 highs[c] += chip.uo(2 + c)
         duty = [round(h / 4) for h in highs]
         assert all(abs(d - v) <= 2 for d, v in zip(duty, colour)), (colour, duty)
+
+
+@cocotb.test()
+async def servo_pulse(dut):
+    """The tutorial's example (docs/TUTORIAL.md): servo pulses of the requested width and period,
+    and a new width taking over at the next period."""
+    from pemu.servo import word
+    chip = await setup(dut)
+    p = prog('servo', 0)
+    await chip.load(0, EngineConfig(set_base=R.uo(2), set_cnt=1, out_shr=True), p)
+    await chip.write(R.CTRL, 0x11)
+    await chip.write(R.TXF(0), word(150, 1000))      # 1 tick = 1 clock here
+    runs = []
+
+    async def watch():
+        prev, n = chip.uo(2), 0
+        while True:
+            await FallingEdge(dut.clk)
+            v = chip.uo(2)
+            if v != prev:
+                runs.append((prev, n))
+                prev, n = v, 0
+            n += 1
+    w = cocotb.start_soon(watch())
+    await ClockCycles(dut.clk, 3500)
+    await chip.write(R.TXF(0), word(200, 1000))
+    await ClockCycles(dut.clk, 3500)
+    w.kill()
+    highs = [n for lv, n in runs if lv == 1][1:]
+    lows = [n for lv, n in runs if lv == 0][1:]
+    assert highs[:2] == [150, 150] and highs[-2:] == [200, 200], highs
+    assert all(h + l == 1000 for h, l in zip(highs, lows)), list(zip(highs, lows))
