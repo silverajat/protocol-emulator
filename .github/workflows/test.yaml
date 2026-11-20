@@ -27,14 +27,15 @@ jobs:
         run: |
           cd test
           make clean
-          make COMPILE_ARGS="-I../src -DDUMP_CORE"   # dump the fuzzer's core too, for coverage
+          make
           # make will return success even if the tests fail, so check results.xml for failed tests
           python -m cocotb_tools.check_results results.xml
 
       - name: Toggle coverage
+        shell: bash
         run: |
           pip install pywellen
-          python tools/toggle_cov.py test/tb.fst --min 98 | tee test/coverage.txt
+          sh tools/coverage.sh --min 98 | tee coverage.txt
 
       - name: Formal proofs
         run: |
@@ -61,5 +62,5 @@ jobs:
           path: |
             test/tb.fst
             test/results.xml
-            test/coverage.txt
+            coverage.txt
             test/output/*
