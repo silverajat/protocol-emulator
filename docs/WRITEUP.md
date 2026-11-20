@@ -83,7 +83,15 @@ Result: 51% utilisation of the 1.21 mm^2 core, 3,286 flip-flops. The first compl
 
 ## 7. Verification
 
-Summary of [VERIFICATION.md](VERIFICATION.md): a golden model written from the specification; the RTL compared with it on every clock under random programs and host traffic (18 internal registers per engine, outputs and bus reads); every protocol program tested against cycle-level models of the real parts (INA228, MCP3208, DS18B20, WS2812, CubeMars motors, a bit-level CAN bus with arbitration); gate-level runs; the FPGA image and the laptop tools simulated before hardware. The bug table there shows what each layer caught, including a simulator-vs-synthesis mismatch the fuzzer found.
+Summary of [VERIFICATION.md](VERIFICATION.md), seven layers, all in CI:
+
+- **A golden model** written from the specification, and **the RTL compared with it on every clock** under random programs, configurations, pin activity and host traffic (18 internal registers per engine, every output, every bus read), including dividers and bit timers across their full 16-bit range.
+- **Every protocol program against cycle-level models of the real parts**: INA228, MCP3208, DS18B20, WS2812, an ARM SW-DP, CubeMars motors, a bit-level CAN bus with arbitration, and zlib for CRC-32.
+- **Formal proofs** (Yosys SAT): the FIFO equals an ideal queue for every input sequence (k-induction), and for every program and configuration a pin changes only when an engine whose own windows include it writes it, so engines cannot disturb each other. Five deliberately broken versions of the RTL must each fail a proof.
+- **Coverage**: 99.0% of all bits toggle both ways over the suite (the engine logic 2,034 of 2,035 bits); the report found three test gaps (the upper bits of the dividers and bit timers, CRC at 32 bits, host addresses above 0x3F) and one spare flip-flop.
+- **Gate-level runs**, and the FPGA image and the laptop tools simulated before they touch hardware.
+
+The bug table there shows what each layer caught, including a simulator-vs-synthesis mismatch the fuzzer found.
 
 ## 8. Limits, honestly
 
