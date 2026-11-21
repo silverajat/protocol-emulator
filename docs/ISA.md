@@ -106,7 +106,7 @@ For buses where a transmitter must watch its own bits (CAN arbitration, I2C mult
 | 4 | `PUSH` / `PULL` | [8] 1 = pull, [7] block, [6] if-full / if-empty, [5] align | PUSH: ISR to RX FIFO, then ISR = 0. With **align** (IN_SHR only) the ISR is shifted down first so its bits start at bit 0. PULL: TX FIFO to OSR (non-blocking pull from an empty FIFO copies X). `iffull` / `ifempty` make it a no-op unless the ISR / OSR has reached its threshold |
 | 5 | `MOV dst, op src` | dst [8:6], op [4:3], src [2:0] | op: 0 none, 1 invert `~`, 2 bit-reverse `::`. src as IN. dst: 0 `PINS`, 1 `X`, 2 `Y`, 3 `PINDIRS`, 5 `PC`, 6 `ISR` (count 0), 7 `OSR` (count 0) |
 | 6 | `SET dst, data` | dst [8:6], data [4:0] | dst: 0 `PINS` (SET window), 1 `X`, 2 `Y`, 3 `PINDIRS` (SET window), 4 `CRC` (0 = zeros, non-zero = all ones) |
-| 7 | `CTL sub, arg` | sub [8:6], arg [1:0] | 0 `NOP`, 1 `CRCTAP` (bit 0 out tap, bit 1 in tap), 2 `FRAME` (bit 0 out side, bit 1 in side; see stuffing), 3 `EVSET idx`, 4 `EVCLR idx` |
+| 7 | `CTL sub, arg` | sub [8:6], arg [1:0] | 0 `NOP`, 1 `CRCTAP` (bit 0 out tap, bit 1 in tap), 2 `FRAME` (bit 0 out side, bit 1 in side; see stuffing), 3 `EVSET idx`, 4 `EVCLR idx`, 5 `BAUD`: CFG3 = X (the engine sets its own bit timer: `BT_POINT` from X[31:16], `BT_PERIOD` from X[15:0]); the bit timer restarts, so the next clock is a bit start. A host write to CFG3 in the same clock wins |
 
 ### Shifting
 
@@ -136,7 +136,7 @@ A transaction is: CS low, one command byte `{read, addr[6:0]}`, then one or more
 | 0x09 | PCS | R | [6e+5:6e] = PC of engine e |
 | 0x10 + 8e + k | engine e | W (RXF: R) | k: 0 CFG0, 1 CFG1, 2 CFG2, 3 CFG3, 4 CRC_POLY, 5 CRC_CFG, 6 TXF (push), 7 RXF (pop) |
 
-Engine configuration is write-only: the host keeps its own copy. (Read-back multiplexers for the configuration and the program memory would have cost about 15% of the chip area.)
+Engine configuration is write-only: the host keeps its own copy. (Read-back multiplexers for the configuration and the program memory would have cost about 15% of the chip area.) CTL BAUD changes CFG3 from inside, so a host that needs the current bit timer asks the program (for example by pushing X).
 
 | Register | Fields |
 |---|---|

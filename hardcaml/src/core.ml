@@ -194,6 +194,10 @@ let create ?(prefix = "") (i : _ I.t) : _ O.t =
                    ]
                ]
            ]
+           (* CTL BAUD: an engine rewrites its own bit timer (a host write in the same clock wins) *)
+           @ List.mapi
+               (fun e (o : _ Engine.O.t) -> when_ o.bt_we [ List.nth cfg3 e <-- o.bt_wd ])
+               engines
            @ List.init n_eng (fun e ->
              when_
                (eng_write e)

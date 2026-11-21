@@ -97,7 +97,7 @@ class Engine:
         crc_mask = M32 >> (31 - wm1)
 
         req = dict(pv_mask=0, pv_val=0, pd_mask=0, pd_val=0, ev_set=0, ev_clr=0,
-                   tx_pop=False, rx_push=None)
+                   tx_pop=False, rx_push=None, bt_set=None)
         new = {}
 
         instr = imem[self.pc]
@@ -415,6 +415,9 @@ class Engine:
                 req['ev_set'] |= 1 << (a & 3)
             elif f86 == 4:
                 req['ev_clr'] |= 1 << (a & 3)
+            elif f86 == 5:                        # BAUD: CFG3 = X, bit timer restarts
+                req['bt_set'] = self.x
+                new['bt_cnt'] = 0
         return req, new
 
 
@@ -521,6 +524,8 @@ class Core:
             self.rs_prev[e] = bit(pins_in, rs_pin)
             tx_push = we and eng_sel and esel == e and ereg == 6
             rx_pop = re and eng_sel and esel == e and ereg == 7
+            if req['bt_set'] is not None:
+                g.cfg[3] = req['bt_set'] & M32   # a host write later in this clock wins
             if restart >> e & 1:
                 g.reset()
                 continue

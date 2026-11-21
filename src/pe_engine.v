@@ -30,6 +30,9 @@ module pe_engine (
     input  wire [3:0]  events,
     output reg  [3:0]  ev_set,
     output reg  [3:0]  ev_clr,
+    // CTL BAUD: the engine retimes itself (CFG3 = X)
+    output reg         bt_we,
+    output wire [31:0] bt_wd,
     output reg  [15:0] pv_mask,
     output reg  [15:0] pv_val,
     output reg  [15:0] pd_mask,
@@ -80,6 +83,7 @@ module pe_engine (
   // ---------------- state ----------------
   reg  [5:0]  pc;
   reg  [31:0] x, y, osr, isr, crc;
+  assign bt_wd = x;
   reg  [5:0]  osr_cnt, isr_cnt;
   reg  [2:0]  dly;
   reg  [15:0] div;
@@ -326,7 +330,7 @@ module pe_engine (
 
   always @(*) begin
     pv_mask = 16'd0; pv_val = 16'd0; pd_mask = 16'd0; pd_val = 16'd0;
-    ev_set = 4'd0; ev_clr = 4'd0;
+    ev_set = 4'd0; ev_clr = 4'd0; bt_we = 1'b0;
     if (exec) begin
       case (op)
         3'd1: if (a[7:6] == 2'd2 && a[8]) ev_clr[a[1:0]] = 1'b1;
@@ -349,6 +353,7 @@ module pe_engine (
         3'd7: begin
           if (f86 == 3'd3) ev_set[a[1:0]] = 1'b1;
           if (f86 == 3'd4) ev_clr[a[1:0]] = 1'b1;
+          if (f86 == 3'd5) bt_we = 1'b1;
         end
         default: ;
       endcase
@@ -400,7 +405,7 @@ module pe_engine (
 
       // bit timer; executing a paced instruction clears both pending ticks, a resync edge
       // restarts them
-      bt_cnt  <= ~bt_on ? 16'd0 : ((bt_eff == bt_period - 16'd1) ? 16'd0 : bt_eff + 16'd1);
+      bt_cnt  <= (~bt_on | bt_we) ? 16'd0 : ((bt_eff == bt_period - 16'd1) ? 16'd0 : bt_eff + 16'd1);
       pend_start <= (exec & pace) ? 1'b0 : (rs_hit ? bt_start : (pend_start | bt_start));
       pend_samp  <= (exec & pace) ? 1'b0 : (rs_hit ? bt_samp : (pend_samp | bt_samp));
 

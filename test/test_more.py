@@ -459,3 +459,39 @@ async def lockstep_with_model(dut):
     matched, diff = lockstep.compare(rtl, model)
     assert diff is None and matched == n, (matched, diff, rtl[:6], model[:6])
     dut._log.info(f'{n} changes over {rtl[-1][0]} clocks: RTL and model identical')
+
+
+@cocotb.test()
+async def uart_autobaud(dut):
+    """CTL BAUD: the engine times the sender's 'U', retimes its own bit timer and receives at
+    whatever rate the sender chose. No baud rate is configured by the host."""
+    from chip import pop_bytes
+    chip = await setup(dut)
+    p = prog('uart_autobaud', 0)
+    pin = R.ui(3)
+    cfg = EngineConfig(serial=True, in_base=pin, jmp_pin=pin, in_shr=True, out_shr=True,
+                       resync_pin=pin, resync_edge=1)
+
+    async def send(data, bit):
+        for b in data:
+            for v in [0] + [(b >> i) & 1 for i in range(8)] + [1]:
+                chip.set_ui(3, v)
+                await ClockCycles(dut.clk, bit)
+        chip.set_ui(3, 1)
+        await ClockCycles(dut.clk, 2 * bit)
+
+    chip.set_ui(3, 1)
+    await chip.load(0, cfg, p)
+    for bit in (37, 10, 113):                 # 1.2 Mbaud, 4.5 Mbaud, 400 kbaud at 45 MHz
+        await chip.write(R.CTRL, 0x11)        # (re)start: measure again
+        await ClockCycles(dut.clk, 20)
+        msg = f'{bit} clk/bit'.encode()
+        await send(b'U', bit)
+        await ClockCycles(dut.clk, 12 * bit)  # the idle check
+        got = b''
+        for i in range(0, len(msg), 4):         # the RX FIFO holds 4 bytes
+            await send(msg[i:i + 4], bit)
+            got += await pop_bytes(chip, 0, len(msg[i:i + 4]))
+        assert got == msg, (bit, got)
+        assert await chip.read(R.EVENTS) == 0
+        dut._log.info(f'{bit} clocks/bit: received {got!r}')

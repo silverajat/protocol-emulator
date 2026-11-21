@@ -22,6 +22,7 @@ Instructions:
     mov  pins|x|y|pindirs|pc|isr|osr, [~|!|::]src
     set  pins|x|y|pindirs|crc, value
     nop | crctap off|out|in|both | frame off|out|in|both | evset n | evclr n
+    baud                 CFG3 (bit timer) = X: the engine retimes itself
 
 Jump targets are absolute addresses in the shared program memory, so a program is
 assembled for the origin it will be loaded at (Program.origin).
@@ -228,6 +229,8 @@ def assemble(text, origin=0, defines=None, name=None):
             w = enc(7, delay, pace, (2 << 6) | pick(FRAME, rest, ln, 'frame side'))
         elif mn in ('evset', 'evclr'):
             w = enc(7, delay, pace, ((3 if mn == 'evset' else 4) << 6) | value(rest, ln, 0, 3))
+        elif mn == 'baud':
+            w = enc(7, delay, pace, 5 << 6)
         else:
             raise AsmError(f'line {ln}: unknown instruction {mn!r}')
         words.append(w)
