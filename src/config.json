@@ -28,6 +28,10 @@
   "//": "wires on weak gates (a221oi_1 into 373 fF: 7.2 ns slew, 5.2 ns on one gate). Spread the",
   "//": "placement closer to the 52% utilisation and let the resizer buffer wires over 400 um.",
   "DESIGN_REPAIR_MAX_WIRE_LENGTH": 400,
+  "//": "Magic DRC takes ~80 min on this 8x4 design and GitHub stops a job at 6 h. The Tiny Tapeout",
+  "//": "precheck runs the KLayout DRC deck on the final GDS (the check that gates submission), so",
+  "//": "the in-flow Magic DRC is skipped, as the template already skips the in-flow KLayout DRC.",
+  "RUN_MAGIC_DRC": 0,
   "//": "Measured (slow 1.08 V 125 C corner): 30 ns, density 65 -> 5.6 ns slack, 201 slew violations,",
   "//": "5h04m; 22 ns, density 56 + wire buffering -> 1.26 ns slack, 43 slew, 4h24m, precheck clean.",
 
