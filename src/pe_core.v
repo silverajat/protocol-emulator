@@ -68,6 +68,8 @@ module pe_core (
   // ---------------- engines ----------------
   wire [5:0]   pc       [0:N-1];
   wire [3:0]   ev_set   [0:N-1];
+  wire         bt_we    [0:N-1];
+  wire [31:0]  bt_wd    [0:N-1];
   wire [3:0]   ev_clr   [0:N-1];
   wire [15:0]  pv_mask  [0:N-1];
   wire [15:0]  pv_val   [0:N-1];
@@ -88,7 +90,7 @@ module pe_core (
           .crc_poly(poly[g]), .crc_wm1(crcw[g]),
           .pc_o(pc[g]), .instr(imem[pc[g]]),
           .pins_in(pins_in), .time_i(time_cnt), .events(events),
-          .ev_set(ev_set[g]), .ev_clr(ev_clr[g]),
+          .ev_set(ev_set[g]), .ev_clr(ev_clr[g]), .bt_we(bt_we[g]), .bt_wd(bt_wd[g]),
           .pv_mask(pv_mask[g]), .pv_val(pv_val[g]), .pd_mask(pd_mask[g]), .pd_val(pd_val[g]),
           .tx_push(tx_push), .tx_din(bus_wdata), .rx_pop(rx_pop), .rx_head(rx_head[g]),
           .tx_full(tx_full[g]), .tx_empty(tx_empty[g]), .rx_full(rx_full[g]), .rx_empty(rx_empty[g])
@@ -199,6 +201,9 @@ module pe_core (
           default: ;
         endcase
       end
+      // CTL BAUD: an engine rewrites its own bit timer (a host write in the same clock wins)
+      for (i = 0; i < N; i = i + 1)
+        if (bt_we[i]) cfg3[i] <= bt_wd[i];
       if (bus_we && eng_sel) begin
         case (ereg)
           3'd0: cfg0[esel] <= bus_wdata;

@@ -1,0 +1,57 @@
+; UART receiver that finds the baud rate by itself (8N1, LSB first).
+; The sender starts with 'U' (0x55: 0 1 0 1 0 1 0 1 0 1 on the wire). The engine times the
+; first 8 bits (start bit edge to the edge before bit 7) with a 2-clock counting loop, so the
+; count is 4 bit times: period = count / 4, sample point = count / 8. CTL BAUD writes them into
+; the bit timer; the engine waits for the line to go idle, then receives bytes like uart_rx.pio.
+; Config: SERIAL, IN_BASE = JMP_PIN = RESYNC_PIN = the RX pin, RESYNC_EDGE falling, IN_SHR,
+;         OUT_SHR, BT_PERIOD = 0 (the program sets it). Restart the engine to measure again.
+; Host: read bytes from RXF (bits [7:0]). Event 0 is set on a framing error.
+.program uart_autobaud
+    set x, 8                ; X = ~8: the count starts at 8, the clocks the loop cannot see
+    mov x, ~x               ;   (edge detection and the turns between low and high)
+    set y, 3                ; three more low bits after the first
+    wait 1, pin, 0          ; idle
+    wait 0, pin, 0          ; start bit of the 'U'; X counts down once per 2 clocks from here
+low:
+    jmp pin, high
+    jmp x--, low
+high:
+    jmp pin, high_cnt
+    jmp y--, low            ; the line fell: next low bit
+    jmp measured            ; fell into bit 7: 8 bit times done
+high_cnt:
+    jmp x--, high
+measured:
+    mov x, ~x               ; X = count (= 4 bit times)
+    mov osr, x
+    out null, 2
+    out y, 16               ; Y = count / 4 = period
+    mov osr, x
+    out null, 3
+    out x, 16               ; X = count / 8 = sample point
+    mov isr, null
+    in y, 16
+    in x, 16                ; ISR = {point, period}
+    mov x, isr
+    baud                    ; CFG3 = X: the bit timer now runs at the sender's rate
+    mov isr, null
+idle:
+    set y, 9                ; ten high samples in a row = the 'U' is over
+idle_bit:
+    jmp.p pin, idle_high
+    jmp idle
+idle_high:
+    jmp y--, idle_bit
+.wrap_target
+start:
+    wait 0, pin, 0          ; start bit edge (it also resyncs the bit timer)
+    nop.p                   ; middle of the start bit
+    in.p pins, 8            ; middle of each data bit
+    jmp.p pin, good         ; middle of the stop bit
+    evset 0                 ; framing error: flag it, drop the byte
+    mov isr, null
+    wait 1, pin, 0
+    jmp start
+good:
+    push align              ; the byte, moved down to bits [7:0]
+.wrap
