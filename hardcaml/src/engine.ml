@@ -33,6 +33,8 @@ module O = struct
     { pc_o : 'a [@bits 6]
     ; ev_set : 'a [@bits 4]
     ; ev_clr : 'a [@bits 4]
+    ; bt_we : 'a (* CTL BAUD: the engine retimes itself (CFG3 = X) *)
+    ; bt_wd : 'a [@bits 32]
     ; pv_mask : 'a [@bits 16]
     ; pv_val : 'a [@bits 16]
     ; pd_mask : 'a [@bits 16]
@@ -328,6 +330,7 @@ let create ?(prefix = "") (i : _ I.t) : _ O.t =
   let pd_val = Always.Variable.wire ~default:(zero 16) in
   let ev_set = Always.Variable.wire ~default:(zero 4) in
   let ev_clr = Always.Variable.wire ~default:(zero 4) in
+  let bt_we = Always.Variable.wire ~default:gnd in
   let one_hot2 v = binary_to_onehot v in
   let set_a5 = uresize a.%[4, 0] 16 in
   Always.(
@@ -371,6 +374,7 @@ let create ?(prefix = "") (i : _ I.t) : _ O.t =
               ; ( k 3 7
                 , [ when_ (f86 ==:. 3) [ ev_set <-- one_hot2 a.%[1, 0] ]
                   ; when_ (f86 ==:. 4) [ ev_clr <-- one_hot2 a.%[1, 0] ]
+                  ; when_ (f86 ==:. 5) [ bt_we <-- vdd ]
                   ] )
               ]
           ]
@@ -419,7 +423,7 @@ let create ?(prefix = "") (i : _ I.t) : _ O.t =
               ; (* bit timer *)
                 bt_cnt
                 <-- mux2
-                      ~:bt_on
+                      (~:bt_on |: bt_we.value)
                       (zero 16)
                       (mux2 (bt_eff ==: bt_period -:. 1) (zero 16) (bt_eff +:. 1))
               ; pend_start
@@ -561,6 +565,8 @@ let create ?(prefix = "") (i : _ I.t) : _ O.t =
   { O.pc_o = pc_v
   ; ev_set = ev_set.value
   ; ev_clr = ev_clr.value
+  ; bt_we = bt_we.value
+  ; bt_wd = x_v
   ; pv_mask = pv_mask.value
   ; pv_val = pv_val.value
   ; pd_mask = pd_mask.value
