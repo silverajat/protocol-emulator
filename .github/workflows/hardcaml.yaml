@@ -1,0 +1,50 @@
+name: hardcaml
+# Regenerates the chip's Verilog from the Hardcaml (OCaml) description and proves every module,
+# and the whole chip, equal to the hand-written Verilog in src/.
+on:
+  push:
+    paths: ['hardcaml/**', 'src/**', 'formal/**', '.github/workflows/hardcaml.yaml']
+  workflow_dispatch:
+
+jobs:
+  hardcaml:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OCaml 5.2 + Hardcaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: '5.2'
+
+      - name: Install Hardcaml
+        run: opam install -y hardcaml ppx_hardcaml ppx_jane dune
+
+      - name: Generate Verilog from Hardcaml
+        working-directory: hardcaml
+        run: |
+          mkdir -p build
+          opam exec -- dune build
+          opam exec -- dune exec ./bin/gen.exe
+          wc -l build/*.v
+
+      - name: Generated chip matches the one in src/ (if present)
+        run: |
+          if [ -f src/hardcaml_chip.v ]; then
+            tail -n +10 src/hardcaml_chip.v | diff -q - hardcaml/build/project.v \
+              && echo "src/hardcaml_chip.v is up to date" \
+              || { echo "src/hardcaml_chip.v differs from the OCaml: regenerate it"; exit 1; }
+          fi
+
+      - name: Yosys
+        run: pip install yowasp-yosys
+
+      - name: Prove each module equal to the hand-written Verilog
+        run: |
+          sh formal/equiv_hc.sh pe_fifo "mem_0=mem[0]" "mem_1=mem[1]" "mem_2=mem[2]" "mem_3=mem[3]"
+          sh formal/equiv_hc.sh host_spi
+          sh formal/equiv_hc.sh pe_engine $(for f in tx rx; do for r in wr rd count; do printf "u_${f}_$r=u_$f.$r "; done; \
+              for m in 0 1 2 3; do printf "u_${f}_mem_$m=u_$f.mem[$m] "; done; done)
+
+      - name: Prove the whole chip equal to the hand-written Verilog
+        run: sh formal/equiv_hc.sh project $(python3 formal/hc_names.py hardcaml/build/project.v)
