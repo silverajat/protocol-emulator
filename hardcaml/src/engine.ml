@@ -53,8 +53,25 @@ let k w v = of_int ~width:w v
 let shl x by = log_shift sll x by
 let shr x by = log_shift srl x by
 
+(* A 2^n-way multiplexer built as a tree of 2:1 muxes on the select bits, LSB first, like the
+   Verilog x[i] that Yosys lowers to a mux tree. Hardcaml's [mux] on a long list becomes a
+   decoded AND-OR (a parallel case), which routes far worse: 64 one-hot select lines run across
+   the whole program memory. *)
+let rec mux_tree sel inputs =
+  match inputs with
+  | [ x ] -> x
+  | _ ->
+    let s0 = lsb sel in
+    let rec pairs = function
+      | a :: b :: t -> mux2 s0 b a :: pairs t
+      | l -> l
+    in
+    let rest = pairs inputs in
+    if width sel = 1 then List.hd rest else mux_tree (msbs sel) rest
+;;
+
 (* x[i] for a signal index *)
-let index x i = mux i (bits_lsb x)
+let index x i = mux_tree i (bits_lsb x)
 
 (* n in 1..32: n >= 32 ? all ones : (1 << n) - 1 *)
 let lowmask n = mux2 (n >=:. 32) (ones 32) (shl (k 32 1) n -:. 1)
