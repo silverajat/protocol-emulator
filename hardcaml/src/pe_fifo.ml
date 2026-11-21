@@ -24,7 +24,7 @@ module O = struct
   [@@deriving hardcaml]
 end
 
-let create ?(depth_log2 = 2) (i : _ I.t) : _ O.t =
+let create ?(depth_log2 = 2) ?(prefix = "") (i : _ I.t) : _ O.t =
   let depth = 1 lsl depth_log2 in
   let cw = depth_log2 + 1 in
   let ptrs = Reg_spec.create ~clock:i.clk ~clear:i.clear () in
@@ -34,14 +34,14 @@ let create ?(depth_log2 = 2) (i : _ I.t) : _ O.t =
   let full = count ==:. depth in
   let do_pop = i.pop &: ~:empty in
   let do_push = i.push &: (~:full |: do_pop) in
-  let wr = reg_fb ptrs ~enable:do_push ~width:depth_log2 ~f:(fun p -> p +:. 1) -- "wr" in
-  let rd = reg_fb ptrs ~enable:do_pop ~width:depth_log2 ~f:(fun p -> p +:. 1) -- "rd" in
-  count <== (reg ptrs (count +: uresize do_push cw -: uresize do_pop cw) -- "count");
+  let wr = reg_fb ptrs ~enable:do_push ~width:depth_log2 ~f:(fun p -> p +:. 1) -- (prefix ^ "wr") in
+  let rd = reg_fb ptrs ~enable:do_pop ~width:depth_log2 ~f:(fun p -> p +:. 1) -- (prefix ^ "rd") in
+  count <== (reg ptrs (count +: uresize do_push cw -: uresize do_pop cw) -- (prefix ^ "count"));
   (* the words are not cleared; a clear only empties the FIFO *)
   let mem =
     List.init depth (fun k ->
       reg data ~enable:(do_push &: (wr ==:. k) &: ~:(i.clear)) i.din
-      -- Printf.sprintf "mem_%d" k)
+      -- Printf.sprintf "%smem_%d" prefix k)
   in
   { O.head = mux rd mem; empty; full }
 ;;

@@ -2,6 +2,8 @@ name: gds
 
 on:
   push:
+    # a GDS run takes 4-6 hours: only when the chip itself can change
+    paths: ['src/**', 'info.yaml']
   workflow_dispatch:
 
 jobs:

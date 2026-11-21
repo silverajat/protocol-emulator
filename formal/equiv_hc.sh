@@ -9,7 +9,7 @@ Y=${YOSYS:-yowasp-yosys}
 mkdir -p formal/build
 sed "s/^module $m\b/module ${m}_hc/" hardcaml/build/$m.v > formal/build/${m}_hc.v
 {
-  echo "read_verilog -Isrc src/$m.v"
+  echo "read_verilog -Isrc src/$m.v"; [ "$m" != pe_fifo ] && echo "read_verilog src/pe_fifo.v"
   echo "read_verilog formal/build/${m}_hc.v"
   echo "hierarchy; proc; flatten; opt_clean; memory; opt_clean"
   echo "rename $m gold"
