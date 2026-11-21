@@ -97,7 +97,7 @@ class Pair:
         if got != want:
             trail = '\n'.join(map(str, self.log))
             u = self.dut.u_core
-            trail += '\nrtl: ' + ' '.join(f'e{e}:pc{int(u.g_eng[e].u_eng.pc.value)}:{u.g_eng[e].u_eng.instr.value}' for e in range(N_ENG))
+            trail += '\nrtl: ' + ' '.join(f'e{e}:pc{int(eng_sig(u, e, "pc").value)}' for e in range(N_ENG))
             raise AssertionError(f'cycle {self.cycle}: {what}: rtl 0x{got:x} model 0x{want:x}\n{trail}')
 
     def check_state(self):
@@ -109,11 +109,19 @@ class Pair:
         self.expect(d.u_core.time_cnt.value, m.time, 'time')
         self.expect(d.u_core.events.value, m.events, 'events')
         for e in range(N_ENG):
-            r = d.u_core.g_eng[e].u_eng
             g = m.eng[e]
             for name in ('pc', 'x', 'y', 'osr', 'isr', 'crc', 'osr_cnt', 'isr_cnt', 'run', 'dly', 'div',
                          'bt_cnt', 'pend_start', 'pend_samp', 'last_out', 'last_bit', 'sbit', 'sph'):
-                self.expect(getattr(r, name).value, getattr(g, name), f'engine {e} {name}')
+                self.expect(eng_sig(d.u_core, e, name).value, getattr(g, name), f'engine {e} {name}')
+
+
+def eng_sig(core, e, name):
+    """An engine register: hand-written core (g_eng[e].u_eng.name) or the flat core generated
+    from Hardcaml (e<e>__name)."""
+    try:
+        return getattr(core.g_eng[e].u_eng, name)
+    except AttributeError:
+        return getattr(core, f'e{e}__{name}')
 
 
 async def start(dut):

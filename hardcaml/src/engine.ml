@@ -67,7 +67,7 @@ let window base cnt =
 
 let sat32 sum = mux2 (sum >:. 32) (k 6 32) (select sum 5 0)
 
-let create (i : _ I.t) : _ O.t =
+let create ?(prefix = "") (i : _ I.t) : _ O.t =
   let ( .%[] ) s (hi, lo) = select s hi lo in
   let cfg0, cfg1, cfg2, cfg3 = i.cfg0, i.cfg1, i.cfg2, i.cfg3 in
   (* ---------------- configuration fields ---------------- *)
@@ -106,7 +106,7 @@ let create (i : _ I.t) : _ O.t =
   let spec = Reg_spec.create ~clock:i.clk () in
   let r w name =
     let v = Always.Variable.reg spec ~width:w in
-    ignore (v.value -- name : Signal.t);
+    ignore (v.value -- (prefix ^ name) : Signal.t);
     v
   in
   let pc = r 6 "pc" in
@@ -144,11 +144,11 @@ let create (i : _ I.t) : _ O.t =
   let rx_push = wire 1 in
   let rx_din = wire 32 in
   let tx =
-    Pe_fifo.create ~prefix:"u_tx_"
+    Pe_fifo.create ~prefix:(prefix ^ "u_tx_")
       { Pe_fifo.I.clk = i.clk; clear = fifo_clear; push = i.tx_push; din = i.tx_din; pop = tx_pop }
   in
   let rx =
-    Pe_fifo.create ~prefix:"u_rx_"
+    Pe_fifo.create ~prefix:(prefix ^ "u_rx_")
       { Pe_fifo.I.clk = i.clk; clear = fifo_clear; push = rx_push; din = rx_din; pop = i.rx_pop }
   in
   let tx_head, tx_empty, tx_full = tx.head, tx.empty, tx.full in
@@ -180,7 +180,7 @@ let create (i : _ I.t) : _ O.t =
   in
   (* ---------------- bit timer ---------------- *)
   let rs_cur = index i.pins_in rs_pin in
-  let rs_prev = reg spec rs_cur -- "rs_prev" in
+  let rs_prev = reg spec rs_cur -- (prefix ^ "rs_prev") in
   let rs_raw =
     (bit rs_edge 0 &: rs_prev &: ~:rs_cur) |: (bit rs_edge 1 &: ~:rs_prev &: rs_cur)
   in

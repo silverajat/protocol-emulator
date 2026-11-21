@@ -7,13 +7,15 @@ cd "$(dirname "$0")/.."
 m=${1:-pe_fifo}; shift
 Y=${YOSYS:-yowasp-yosys}
 mkdir -p formal/build
-sed "s/^module $m\b/module ${m}_hc/" hardcaml/build/$m.v > formal/build/${m}_hc.v
+mod=$m; [ "$m" = project ] && mod=tt_um_silverajat_protoemu
+sed "s/^module $mod\b/module ${mod}_hc/" hardcaml/build/$m.v > formal/build/${m}_hc.v
 {
-  echo "read_verilog -Isrc src/$m.v"; [ "$m" != pe_fifo ] && echo "read_verilog src/pe_fifo.v"
+  if [ "$m" = project ]; then echo "read_verilog -Isrc src/project.v src/host_spi.v src/pe_core.v src/pe_engine.v src/pe_fifo.v"
+  else echo "read_verilog -Isrc src/$m.v"; [ "$m" != pe_fifo ] && [ "$m" != host_spi ] && echo "read_verilog src/pe_fifo.v src/pe_engine.v"; fi
   echo "read_verilog formal/build/${m}_hc.v"
   echo "hierarchy; proc; flatten; opt_clean; memory; opt_clean"
-  echo "rename $m gold"
-  echo "rename ${m}_hc gate"
+  echo "rename $mod gold"
+  echo "rename ${mod}_hc gate"
   echo "cd gate"
   for p in "$@"; do echo "rename ${p%%=*} ${p#*=}"; done
   echo "cd .."

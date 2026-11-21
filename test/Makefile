@@ -8,7 +8,13 @@ TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
 PROJECT_SOURCES = project.v host_spi.v pe_core.v pe_engine.v pe_fifo.v
 
-ifeq ($(HARDCAML),yes)
+ifeq ($(HARDCAML),chip)
+
+# RTL simulation of the whole chip generated from Hardcaml (hardcaml/build/project.v):
+SIM_BUILD = sim_build/hardcaml_chip
+VERILOG_SOURCES += $(PWD)/../hardcaml/build/project.v $(PWD)/../hardcaml/build/pe_core.v
+
+else ifeq ($(HARDCAML),yes)
 
 # RTL simulation with the engine (and its FIFOs) generated from Hardcaml (hardcaml/):
 SIM_BUILD = sim_build/hardcaml
