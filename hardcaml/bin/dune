@@ -1,0 +1,4 @@
+(executable
+ (name gen)
+ (libraries pemu_hw hardcaml core)
+ (preprocess (pps ppx_jane)))
