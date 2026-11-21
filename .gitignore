@@ -25,3 +25,4 @@ formal/build/
 test/cov/
 formal/*.log
 build/
+hardcaml/_build/
