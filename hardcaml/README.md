@@ -8,7 +8,7 @@ every clock).
 | Module | Hardcaml | Proven equal to |
 |---|---|---|
 | FIFO | `src/pe_fifo.ml` | `src/pe_fifo.v` (169 `$equiv` cells) |
-| Engine (with its two FIFOs) | `src/engine.ml` | `src/pe_engine.v` (619 `$equiv` cells: every register and output bit) |
+| Engine (with its two FIFOs) | `src/engine.ml` | `src/pe_engine.v` (652 `$equiv` cells with `CTL BAUD`: every register and output bit) |
 | Host SPI port | `src/host_spi.ml` | `src/host_spi.v` (124) |
 | Core: 3 engines (a loop), program memory, pins, events, registers | `src/core.ml` | `src/pe_core.v` |
 | **The whole chip, flat** | `src/chip.ml` | **`src/project.v` with everything under it (3295 `$equiv` cells)** |
@@ -21,6 +21,12 @@ the whole generated chip:
     cd test && make HARDCAML=yes        # generated engine in the hand-written core: 34 / 34
     cd test && make HARDCAML=chip       # whole generated chip: 32 / 32, plus the clock-by-clock
                                         # comparison with the Python model (24 random programs agree)
+
+**The chip is taped out from the generated Verilog**: `src/hardcaml_chip.v` is
+`build/project.v` with a header (the `hardcaml` CI job regenerates it and fails if they differ).
+Large multiplexers are built with `Engine.mux_tree` (2:1 trees): Hardcaml's `mux` on a long list
+becomes a decoded AND-OR, and for the program memory read that overloaded the busiest routing
+layer. See docs/WRITEUP.md section 7.
 
 Build (OCaml 5.2, `opam install hardcaml ppx_hardcaml ppx_jane dune`):
 

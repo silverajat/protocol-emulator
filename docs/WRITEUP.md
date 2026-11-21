@@ -62,10 +62,11 @@ Details: [ISA.md](ISA.md). In short, an engine executes one instruction per tick
 | `spi_auto.pio` | 4 | SPI master with autopull/autopush, for tight memory |
 | `crc32.pio` | 8 | CRC-32 of a byte stream (Ethernet, zip, PNG), bit-exact with zlib |
 | `swd.pio` | 28 | ARM Serial Wire Debug host: reads a Cortex-M's debug port (STM32 IDCODE), one wire that turns around inside every transaction |
+| `uart_autobaud.pio` | 37 | UART receiver that finds the sender's baud rate by itself: times a 'U', retimes its own bit timer with `CTL BAUD`, then receives |
 
 ### Flexibility: protocols added after the hardware was finished
 
-Nine programs were written after the RTL was done, without touching it, each needing something different: WS2812 needs pulse-width coding; 1-Wire needs open-drain time slots with the master and the device sharing one wire; Manchester needs the clock recovered from the data (the receiver waits 3/4 of a bit after each mid-bit edge, so it never mistakes an edge between bits for data); the IR remote needs a 38 kHz carrier gated by marks and spaces, with the protocol itself (NEC) left on the host; SWD needs one data wire that changes direction twice inside a transaction, with a clock cycle for each turnaround (the chip can read and write an ARM microcontroller's debug port); DMX512 is the UART program plus a timed break; the IR receiver times a remote's pulses with the bit timer (which restarts on every mark's end), so it decodes in 14 words; RGB PWM drives three channels from one engine with no counters. All pass against models in `test/test_more.py`. The chip can also *recognise* protocols: `edge_capture.pio` timestamps a pin's edges and the host's classifier names UART (and its baud rate), CAN, NEC IR, DMX512, WS2812, Manchester, SPI/I2C clocks or PWM from the timing alone. **[Gate 6: SWD against a real STM32; more after the freeze, e.g. LIN, PS/2, HDLC.]**
+Nine programs were written after the RTL was done, without touching it, each needing something different: WS2812 needs pulse-width coding; 1-Wire needs open-drain time slots with the master and the device sharing one wire; Manchester needs the clock recovered from the data (the receiver waits 3/4 of a bit after each mid-bit edge, so it never mistakes an edge between bits for data); the IR remote needs a 38 kHz carrier gated by marks and spaces, with the protocol itself (NEC) left on the host; SWD needs one data wire that changes direction twice inside a transaction, with a clock cycle for each turnaround (the chip can read and write an ARM microcontroller's debug port); DMX512 is the UART program plus a timed break; the IR receiver times a remote's pulses with the bit timer (which restarts on every mark's end), so it decodes in 14 words; RGB PWM drives three channels from one engine with no counters. All pass against models in `test/test_more.py`. One instruction was added for flexibility after everything else: `CTL BAUD` lets an engine write its own bit timer (period and sample point from X), so a program can measure a rate and lock on to it, or change rate in the middle of a frame (as CAN FD's data phase does), with no host in the loop. `uart_autobaud.pio` receives at 10, 37 and 113 clocks per bit with nothing configured but the pins. It cost 0.13% of the area and, at 22 ns, 2 ns of worst-corner timing; see section 6. The chip can also *recognise* protocols: `edge_capture.pio` timestamps a pin's edges and the host's classifier names UART (and its baud rate), CAN, NEC IR, DMX512, WS2812, Manchester, SPI/I2C clocks or PWM from the timing alone. **[Gate 6: SWD against a real STM32; more after the freeze, e.g. LIN, PS/2, HDLC.]**
 
 ## 5. Demos on hardware **[after the bench]**
 
@@ -104,19 +105,22 @@ Signed off in the worst corner (slow, 1.08 V, 125 C). Early runs at 50-60 MHz fa
 | 30 ns, resource sharing on | 2.93 ns | 37 MHz | 508 / 150 | 5h20m |
 | 30 ns, sharing off | 5.62 ns | 41 MHz | 201 / 72 | 5h04m |
 | 30 ns, sharing off + RTL path fixes | 5.92 ns | 41.5 MHz | 266 / 74 | 4h10m |
-| **22 ns, sharing off, spread placement, long-wire buffering** (the submitted design) | **1.26 ns** | **48 MHz** | **43 / 3** | **4h24m** |
-| Typical corner in the last run | 8.82 ns | 76 MHz | | |
+| 22 ns, sharing off, spread placement, long-wire buffering | 1.26 ns | 48 MHz | 43 / 3 | 4h24m |
+| 22 ns, the same plus `CTL BAUD` | -2.01 ns (failed) | 41.6 MHz | 15 / 0 | 4h30m |
+| 22 ns, the Hardcaml-generated chip (no `CTL BAUD`) | did not route in 6 h (Metal3 99.6%, then 110.6%) | | | |
+| **25 ns, the Hardcaml-generated chip with `CTL BAUD`** (the submitted design) | **7.47 ns** | **57 MHz** | **35 / 0** | **2h17m** |
+| Typical corner in the submitted design | 13.87 ns | 90 MHz | | |
 
 What each step fixed:
 
 - **Resource sharing.** Yosys merged the engines' shifters into shared multiplexer "supercells" and put one after `exec`: 86 logic levels, 59 without sharing, for about 12% more cells.
 - **Two RTL path fixes, tried and backed out.** Each was proven to leave every register and output unchanged (`formal/equiv.sh`, Yosys equivalence by induction against the previous commit). The serial unit's stuff-bit decision read bit 0 of the full OUT shifter although it only ever needs one bit, which put the shifter on the `done` -> PC path; it now takes the end bit of the shift register. OUT's and IN's bit count, and the "one bit to one pin" test, are decoded straight from the instruction fields instead of waiting for the opcode select that picks the count for every other instruction. Pre-layout worst path 19.3 -> 15.8 ns, but after routing only 0.3 ns (row 3), because wires dominate the real path. At 22 ns the layout with them overloaded Metal3, the busiest of the four signal-routing layers in this process (117% of capacity, against 96% without them), and detailed routing could not finish inside GitHub's six-hour limit. The submitted RTL is the one without them; the commits stay in the history, proven and ready if the layout side changes.
 - **Wires, not logic, were the rest.** The timing report showed a 1x AOI gate driving 373 fF through a routing detour (7.2 ns slew, 5.2 ns on one gate, about a quarter of the path). Detailed routing was congested (171 minutes). Spreading the placement to just above the 52% utilisation and letting the resizer buffer any wire over 400 um removed most slew and capacitance violations and an hour of routing.
-- **A tight target.** At 30 ns the resizer stops once the paths meet; at 22 ns it upsizes the critical ones.
+- **A tight target, then a looser one.** At 30 ns the resizer stops once the paths meet; at 22 ns it upsizes the critical ones. But 22 ns also packs the critical cells tightly, and this chip is right at the routing limit of its one busy horizontal layer: adding `CTL BAUD` (0.13% of the area) tipped the layout into detours and cost 2 ns. At 25 ns the placement relaxed, Metal3 dropped to 91%, detailed routing converged in about an hour instead of two to four, and the shorter wires made the real worst path 17.5 ns: faster than any 22 ns run. The chip is rated 40 MHz (signed off at 25 ns); the same layout has worst-corner slack to 57 MHz.
 
 Because a GDS run takes four to five hours, RTL ideas were first ranked with `tools/sta_lite.sh`, a pre-layout timing estimate written for this project: it synthesises with LibreLane's own ABC script, reads the IHP Liberty tables (delay and slew against load, slew propagated, buffer trees assumed on wide nets) and names the critical path in about three minutes.
 
-Signing off in the worst corner costs nothing in function: every protocol's timing is a configuration value, and CAN at 1 Mbit/s is 45 clocks per bit at 45 MHz.
+Signing off in the worst corner costs nothing in function: every protocol's timing is a configuration value, and CAN at 1 Mbit/s is 40 clocks per bit at 40 MHz.
 
 ## 7. Verification
 
@@ -146,7 +150,7 @@ The chip was designed and verified in Verilog. It was then written a second time
 - **What changed in the writing.** The three engines are a loop over one `Engine.create` instead of a `generate` block; the program memory is a list of 64 registers and its read port is one `mux`; bit widths are checked when the circuit is built, so a width slip is an error, not a lint warning.
 - **CI keeps them equal.** The `hardcaml` workflow regenerates the Verilog from the OCaml on every change and re-runs every proof.
 
-**[Tapeout source: Verilog or Hardcaml, after the GDS run from the generated Verilog]**
+**Taped out from the Hardcaml-generated Verilog** (`src/hardcaml_chip.v`), with the hand-written Verilog in `src/` as the reference it is proven against; `CTL BAUD` was added to both and re-proven (engine 652 `$equiv` cells, whole chip 3,295). Getting there was physical, not logical. Hardcaml's `mux` on a long list becomes a decoded AND-OR, which for the program memory read means 64 one-hot select lines across the whole memory, three times: that netlist overloaded Metal3 (99.6%) and could not route in six hours. Rewritten as 2:1 mux trees it matched the hand-written netlist's cell mix closely, yet at 22 ns it routed worse (110.6%). At 25 ns it routed in about an hour with 7.5 ns of worst-corner slack. Two netlists proven logically identical can route very differently, and on a chip this full the placement target matters as much as the logic.
 
 ## 8. Limits, honestly
 

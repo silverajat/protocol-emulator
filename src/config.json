@@ -33,11 +33,13 @@
   "//": "the in-flow Magic DRC is skipped, as the template already skips the in-flow KLayout DRC.",
   "RUN_MAGIC_DRC": 0,
   "//": "Measured (slow 1.08 V 125 C corner): 30 ns, density 65 -> 5.6 ns slack, 201 slew violations,",
-  "//": "5h04m; 22 ns, density 56 + wire buffering -> 1.26 ns slack, 43 slew, 4h24m, precheck clean.",
+  "//": "5h04m; 22 ns, density 56 + wire buffering -> 1.26 ns slack, 43 slew, 4h24m, precheck clean;",
+  "//": "with CTL BAUD at 22 ns -> -2.0 ns; Hardcaml chip + BAUD at 25 ns -> 7.47 ns, Metal3 91%, 2h17m.",
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
-  "//": "22 ns (45 MHz): a tight target makes the resizer upsize the critical paths, not just meet them.",
+  "//": "25 ns (40 MHz): 22 ns packed the critical cells into Metal3 detours once CTL BAUD was added;",
+  "//": "25 ns routes in about an hour and leaves worst-corner slack to 57 MHz.",
   "CLOCK_PERIOD": 25,
 
   "//": "Hold slack margin - Increase them in case you are getting hold violations.",
