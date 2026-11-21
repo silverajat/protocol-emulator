@@ -55,6 +55,7 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `protocol_detective` | edge_capture on another engine's output | UART, Manchester and PWM named with their rates from the edge times alone |
 | `lockstep_with_model` | the golden model | three engines' pin-change log from the RTL equals the model's, change for change and clock for clock |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
+| `uart_autobaud` | bit-banged UART at 10, 37 and 113 clocks per bit, nothing configured but the pins | the engine times the sender's 'U', writes its own bit timer with `CTL BAUD`, and receives each message exactly with no framing errors; also on the Hardcaml-generated chip |
 
 ## 4. Gate level
 
@@ -79,6 +80,21 @@ CI runs `test.py` and `test_bench.py` on the post-layout netlist. Before pushing
 Together: **a pin changes only when an engine whose own windows include it writes it**, so engines given different pins cannot disturb each other, for every program.
 
 `formal/mutants.sh` checks the proofs have teeth: five deliberately broken versions of the RTL (the FIFO refusing a push when a pop frees the slot, a pop on empty moving the pointer, SET or OUT claiming a pin outside the window, the core keeping value bits outside a claim) must each fail a proof, and CI runs it. One first-draft property was wrong rather than the RTL: the engine does put value bits outside its mask, and the core's merge masks them; the property moved to the claim, where the guarantee actually lives.
+
+### Equivalence: two descriptions of one chip
+
+The chip exists twice: hand-written Verilog in `src/`, and Hardcaml (OCaml) in `hardcaml/`, from which the taped-out `src/hardcaml_chip.v` is generated. `formal/equiv_hc.sh` proves each Hardcaml module, and then the whole flat chip, equal to its Verilog counterpart with Yosys equivalence by induction (`equiv_make`, `equiv_simple`, `equiv_induct`): every register and every output bit, on every clock, from any reachable state.
+
+| Hardcaml | Verilog | `$equiv` cells proven |
+|---|---|---|
+| `pe_fifo.ml` | `pe_fifo.v` | 169 |
+| `host_spi.ml` | `host_spi.v` | 124 |
+| `engine.ml` (with both FIFOs) | `pe_engine.v` | 652 |
+| `chip.ml` (core, 3 engines, program memory, host port) | `project.v` and everything under it | 3,295 |
+
+The proof was checked against planted bugs: three one-line changes to `engine.ml` (Y decrementing by two, the stuff-run counter saturating at 14 instead of 15, the serial clock's CPHA test dropped) each fail it. The test suite also runs on the generated chip (`make HARDCAML=chip`). The `hardcaml` CI workflow regenerates the Verilog from the OCaml on every change, checks it matches the committed `src/hardcaml_chip.v`, and re-runs every proof, so the two descriptions cannot drift apart.
+
+The same tool proves timing-motivated RTL rewrites change nothing (`formal/equiv.sh <module> <git-ref>`, against any earlier commit); internal wires that only matter under a guard can be excluded by name, while every register and output is still compared.
 
 ## 7. Coverage
 
