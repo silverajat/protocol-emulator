@@ -130,6 +130,24 @@ Summary of [VERIFICATION.md](VERIFICATION.md), seven layers, all in CI:
 
 The bug table there shows what each layer caught, including a simulator-vs-synthesis mismatch the fuzzer found.
 
+### The same chip in Hardcaml, proven equal
+
+The chip was designed and verified in Verilog. It was then written a second time in [Hardcaml](https://github.com/janestreet/hardcaml), the OCaml hardware library Jane Street uses for its own FPGA and ASIC designs (`hardcaml/`), module by module, and each Hardcaml module was proven equal to its Verilog original before the next was started:
+
+| Module | Hardcaml | Proof (Yosys equivalence by induction, every register and output bit, every clock) |
+|---|---|---|
+| FIFO | `pe_fifo.ml` | 169 `$equiv` cells |
+| Host SPI port | `host_spi.ml` | 124 |
+| Engine, with its FIFOs | `engine.ml` | 619 |
+| **Whole chip** (core, 3 engines, program memory, pins, host port) | `core.ml`, `chip.ml` | **3,295** |
+
+- **The proofs check something.** Three planted one-line bugs in `engine.ml` (Y decrementing by two, the stuff-run counter saturating one early, a dropped CPHA test) each fail the engine proof.
+- **Simulation agrees too.** The test suite passes with the generated engine inside the hand-written core, and with the whole generated chip (`make HARDCAML=chip`), including the clock-by-clock comparison with the Python model.
+- **What changed in the writing.** The three engines are a loop over one `Engine.create` instead of a `generate` block; the program memory is a list of 64 registers and its read port is one `mux`; bit widths are checked when the circuit is built, so a width slip is an error, not a lint warning.
+- **CI keeps them equal.** The `hardcaml` workflow regenerates the Verilog from the OCaml on every change and re-runs every proof.
+
+**[Tapeout source: Verilog or Hardcaml, after the GDS run from the generated Verilog]**
+
 ## 8. Limits, honestly
 
 - CAN: classical CAN only (no CAN FD); DLC above 8 is not handled; the host decodes frame fields from the bit stream (the chip ACKs and checks the CRC itself).

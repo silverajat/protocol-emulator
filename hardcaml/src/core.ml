@@ -97,7 +97,7 @@ let create ?(prefix = "") (i : _ I.t) : _ O.t =
           ; cfg3 = (List.nth cfg3 e).value
           ; crc_poly = (List.nth poly e).value
           ; crc_wm1 = (List.nth crcw e).value
-          ; instr = mux pc imem
+          ; instr = Engine.mux_tree pc imem
           ; pins_in
           ; time_i = time_cnt.value
           ; events = events.value

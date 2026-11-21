@@ -11,7 +11,7 @@ mod=$m; [ "$m" = project ] && mod=tt_um_silverajat_protoemu
 sed "s/^module $mod\b/module ${mod}_hc/" hardcaml/build/$m.v > formal/build/${m}_hc.v
 {
   if [ "$m" = project ]; then echo "read_verilog -Isrc src/project.v src/host_spi.v src/pe_core.v src/pe_engine.v src/pe_fifo.v"
-  else echo "read_verilog -Isrc src/$m.v"; [ "$m" != pe_fifo ] && [ "$m" != host_spi ] && echo "read_verilog src/pe_fifo.v src/pe_engine.v"; fi
+  else echo "read_verilog -Isrc src/$m.v"; case $m in pe_engine) echo "read_verilog src/pe_fifo.v";; pe_core) echo "read_verilog src/pe_fifo.v src/pe_engine.v";; esac; fi
   echo "read_verilog formal/build/${m}_hc.v"
   echo "hierarchy; proc; flatten; opt_clean; memory; opt_clean"
   echo "rename $mod gold"
