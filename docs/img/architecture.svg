@@ -18,7 +18,7 @@
   </defs>
   <rect width="960" height="560" fill="#f4f2ec"/>
   <text x="24" y="34" class="h" font-size="18">Protocol Emulator: one chip, every protocol in software</text>
-  <text x="24" y="54" class="s">IHP 130 nm, Tiny Tapeout 8x4 tiles. Nothing below knows any protocol; programs (4-49 words) do.</text>
+  <text x="24" y="54" class="s">IHP 130 nm, Tiny Tapeout 8x4 tiles, 40 MHz rated. Built with Hardcaml. Nothing below knows any protocol; programs (4-49 words) do.</text>
 
   <!-- host -->
   <rect x="24" y="90" width="150" height="70" rx="8" class="box"/>
@@ -43,7 +43,7 @@
     <text x="306" y="172" text-anchor="middle" class="h">Engine 0</text>
     <rect x="244" y="182" width="124" height="22" class="unit"/><text x="306" y="197" text-anchor="middle" class="t">PC, X, Y, OSR, ISR</text>
     <rect x="244" y="208" width="124" height="22" class="unit"/><text x="306" y="223" text-anchor="middle" class="t">TX + RX FIFOs (4)</text>
-    <rect x="244" y="234" width="124" height="22" class="unit"/><text x="306" y="249" text-anchor="middle" class="t">bit timer + resync</text>
+    <rect x="244" y="234" width="124" height="22" class="unit"/><text x="306" y="249" text-anchor="middle" class="t">bit timer + BAUD</text>
     <rect x="244" y="260" width="124" height="22" class="unit"/><text x="306" y="275" text-anchor="middle" class="t">serial unit (clock)</text>
     <rect x="244" y="286" width="124" height="22" class="unit"/><text x="306" y="301" text-anchor="middle" class="t">bit stuffer</text>
     <rect x="244" y="312" width="124" height="22" class="unit"/><text x="306" y="327" text-anchor="middle" class="t">CRC (1-32 bit)</text>
@@ -85,7 +85,7 @@
 
   <!-- protocols -->
   <text x="24" y="488" class="h">Programs so far</text>
-  <text x="24" y="510" class="t">CAN (with arbitration, ACK, timestamps, fault injection) - I2C - SPI - UART - WS2812 - 1-Wire - Manchester - NEC IR (TX, RX)</text>
+  <text x="24" y="510" class="t">CAN (with arbitration, ACK, timestamps, fault injection) - I2C - SPI - UART (and auto-baud) - WS2812 - 1-Wire - Manchester - NEC IR</text>
   <text x="24" y="530" class="t">ARM SWD - DMX512 - RGB PWM - servo - CRC-32 - edge recorder - pin logger</text>
   <text x="24" y="550" class="s">Most were written after the hardware was frozen.</text>
 </svg>

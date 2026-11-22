@@ -149,6 +149,8 @@ I signed off at the slow corner (1.08 V, 125 C), because that is where the chip 
 | **25 ns, the Hardcaml-generated chip with `CTL BAUD` (submitted)** | **7.47 ns** | **57 MHz** | **35 / 0** | **2h17m** |
 | Typical corner, submitted design | 13.87 ns | 90 MHz | | |
 
+![Timing closure](img/timing_story.svg)
+
 What I learned at each step:
 
 - **Resource sharing.** Yosys merged the three engines' shifters into shared multiplexer "supercells" and put one after the execute signal. The critical path was 86 logic levels; without sharing it is 59, for about 12% more cells. I turned sharing off.
@@ -161,6 +163,8 @@ Because a GDS run took 4 to 6 hours, I also wrote `tools/sta_lite.sh`, a pre-lay
 Signing off at the slow corner costs nothing in function: every protocol's timing is a configuration value, and CAN at 1 Mbit/s still gets 40 clocks per bit at 40 MHz.
 
 ### Hardcaml
+
+![Two descriptions of one chip, proven equal](img/hardcaml_flow.svg)
 
 After the chip was working and verified in Verilog, I rewrote it in [Hardcaml](https://github.com/janestreet/hardcaml), the OCaml library Jane Street uses to generate its own FPGA and ASIC designs (`hardcaml/`). I did it one module at a time, and proved each Hardcaml module equal to its Verilog original before starting the next (section 6 has the proofs).
 
