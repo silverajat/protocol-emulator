@@ -7,7 +7,7 @@ A Tiny Tapeout chip (IHP 130 nm, 8x4 tiles) with three programmable timing engin
 | At a glance | |
 |---|---|
 | Engines | 3, sharing a 64 x 16-bit program memory; each with TX/RX FIFOs, bit timer, stuffer, CRC unit, serial shifter |
-| Protocols written for it | 20 programs, most written after the hardware was finished (table below) |
+| Protocols written for it | 22 programs, most written after the hardware was finished (table below) |
 | Clock | rated 40 MHz, signed off in the worst corner (1.08 V, 125 C); the layout has slack to 57 MHz there, 90 MHz typical |
 | Built with | [Hardcaml](hardcaml/) (Jane Street's OCaml hardware library): the taped-out Verilog is generated from it and formally proven equal to a hand-written Verilog reference |
 | Verified by | clock-by-clock comparison with a Python golden model, protocol tests against device models, formal proofs, gate-level simulation ([docs/VERIFICATION.md](docs/VERIFICATION.md)) |
