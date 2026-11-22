@@ -5,7 +5,7 @@
 # WS2812 LED strips (pulse-width coded) and 1-Wire (a DS18B20 temperature sensor).
 
 import cocotb
-from cocotb.triggers import ClockCycles, FallingEdge
+from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge
 
 from chip import setup, prog, R
 from devices import PinBus, Ds18b20, crc8_maxim
@@ -495,3 +495,52 @@ async def uart_autobaud(dut):
         assert got == msg, (bit, got)
         assert await chip.read(R.EVENTS) == 0
         dut._log.info(f'{bit} clocks/bit: received {got!r}')
+
+
+@cocotb.test()
+async def bit_rate_switch(dut):
+    """CTL BAUD mid-frame (the CAN FD bit-rate switch): 16 bits at the nominal rate, switching at
+    the sample point of the last one (BRS), then 32 bits at the data rate, then back. The pin is
+    recorded every clock and compared with the exact expected waveform."""
+    chip = await setup(dut)
+    p = prog('brs_tx', 0)
+    cfg = EngineConfig(serial=True, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1)
+    header, data = 0x5A3C, 0xDEADBEEF
+    for pn, pf in ((40, 10), (24, 4)):
+        await chip.write(R.CTRL, 0)
+        await chip.load(0, cfg, p)
+        await chip.write(R.CTRL, 0x11)                 # (re)start: this also empties the FIFOs
+        await chip.write(R.TXF(0), [(pn // 2) << 16 | pn, (pf // 2) << 16 | pf])
+        await ClockCycles(dut.clk, 3 * pn)
+        wave = []
+
+        async def record():                       # runs while the host is still writing
+            for _ in range(200 * pn):
+                if len(wave) >= 16 * pn + 32 * pf + 4 * pn:
+                    return
+                await RisingEdge(dut.clk)
+                if wave or chip.uo(2) == 0:      # from the first dominant bit (header MSB is 0)
+                    wave.append(chip.uo(2))
+
+        rec = cocotb.start_soon(record())
+        await chip.write(R.TXF(0), [header << 16, data])
+        await rec
+        # expected: header bits pn clocks each, BRS cut at its sample point (+4 clocks for
+        # NOP.P -> PULL -> MOV -> BAUD), data bits pf clocks each, then idle high
+        exp = []
+        for i in range(16):
+            b = (header >> (15 - i)) & 1
+            exp += [b] * (pn if i < 15 else pn // 2 + 4)
+        for i in range(32):
+            exp += [(data >> (31 - i)) & 1] * pf
+        exp += [1] * (len(wave) - len(exp))
+        def runs(x):
+            out = []
+            for v in x:
+                if out and out[-1][0] == v:
+                    out[-1][1] += 1
+                else:
+                    out.append([v, 1])
+            return out
+        assert wave == exp, (pn, pf, runs(wave), runs(exp))
+        dut._log.info(f'nominal {pn} clocks/bit -> data {pf} clocks/bit and back: exact')

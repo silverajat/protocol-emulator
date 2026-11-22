@@ -1,0 +1,30 @@
+; Two bit rates in one frame, switched by the engine itself: the CAN FD bit-rate-switch
+; mechanism. The frame's first part goes out at the nominal rate; at the sample point of its last
+; bit (CAN FD's BRS bit) the engine retimes its own bit timer with CTL BAUD and sends the data
+; phase at the fast rate, then switches back at the sample point of the last fast bit.
+; This shows the rate switch only; it is not a CAN FD node (no stuffing, CRC-17/21 or ACK here).
+; Config: SERIAL, OUT and SET windows = the TX pin, OUT_SHR off (MSB first), BT_PERIOD 0.
+; Host: TXF <- nominal CFG3 {point, period}, data-phase CFG3 (once); then for each frame
+;       TXF <- header (bits [31:16], sent MSB first), data word (32 bits).
+.program brs_tx
+    set pindirs, 1
+    pull block
+    mov x, osr
+    mov isr, x              ; ISR keeps the nominal timing
+    baud
+    pull block
+    mov y, osr              ; Y keeps the data-phase timing
+.wrap_target
+    pull block              ; header
+    nop.p                   ; drop a stale bit-start tick
+    out.p pins, 16          ; nominal rate: arbitration phase, ending with BRS
+    nop.p                   ; sample point of BRS
+    pull block              ; data word
+    mov x, y
+    baud                    ; data-phase rate from the next clock
+    out.p pins, 32
+    nop.p                   ; sample point of the last fast bit
+    mov x, isr
+    baud                    ; back to the nominal rate
+    set.p pins, 1           ; delimiter / idle at the nominal rate
+.wrap

@@ -56,6 +56,7 @@ All of these go through the chip's real host SPI port, driven bit by bit the way
 | `lockstep_with_model` | the golden model | three engines' pin-change log from the RTL equals the model's, change for change and clock for clock |
 | `bench_three_buses_at_once` | CubeMars AK motor model (MIT mode) + INA228 + MCP3208 | the whole rover bench: CAN, I2C and SPI programs in memory together (64/64 words) and running at the same time |
 | `uart_autobaud` | bit-banged UART at 10, 37 and 113 clocks per bit, nothing configured but the pins | the engine times the sender's 'U', writes its own bit timer with `CTL BAUD`, and receives each message exactly with no framing errors; also on the Hardcaml-generated chip |
+| `bit_rate_switch` | the pin recorded on every clock | 16 bits at the nominal rate, a switch at the sample point of the last one, 32 bits at the data rate, and back: the waveform matches the expected one exactly at 40 -> 10 and 24 -> 4 clocks per bit; also on the Hardcaml-generated chip |
 
 ## 4. Gate level
 

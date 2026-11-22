@@ -12,12 +12,12 @@ Jane Street's challenge asks for an open-source protocol emulator ASIC: a small 
 
 **Can one small chip be programmed to speak protocols it was not designed for, including all three buses of my rover bench at the same time, while being verified well enough to tape out?**
 
-What I built: a chip with three small engines that share a program memory. The engines know nothing about any protocol. They provide generic pieces (shift registers, FIFOs, a bit timer that locks onto bus edges, a bit stuffer, a CRC unit, a clocked serial shifter), and the protocol is a short program of 4 to 49 sixteen-bit words. One engine is a full CAN 2.0 node, the other two are an I2C master and an SPI master, and all three programs fit in the 64-word program memory together and run at once. In total I wrote 21 programs for it, most of them after the hardware was finished.
+What I built: a chip with three small engines that share a program memory. The engines know nothing about any protocol. They provide generic pieces (shift registers, FIFOs, a bit timer that locks onto bus edges, a bit stuffer, a CRC unit, a clocked serial shifter), and the protocol is a short program of 4 to 49 sixteen-bit words. One engine is a full CAN 2.0 node, the other two are an I2C master and an SPI master, and all three programs fit in the 64-word program memory together and run at once. In total I wrote 22 programs for it, most of them after the hardware was finished.
 
 | At a glance | |
 |---|---|
 | Engines | 3, sharing a 64 x 16-bit program memory and a 32-bit cycle counter |
-| Programs | 21, from WS2812 LEDs to CAN with arbitration and ARM Serial Wire Debug |
+| Programs | 22, from WS2812 LEDs to CAN with arbitration and ARM Serial Wire Debug |
 | Clock | rated 40 MHz, signed off at the slow corner (1.08 V, 125 C); the layout has slack up to 57 MHz there and 90 MHz at the typical corner |
 | Area | 51% of the 8x4-tile core, 3,286 flip-flops |
 | Written in | Verilog, then again in Hardcaml; the taped-out Verilog is generated from Hardcaml and formally proven equal to the hand-written version |
@@ -88,6 +88,7 @@ The engines are deliberately protocol-agnostic. Every extra piece of hardware wa
 | `spi_master.pio` | 6 | any mode, full duplex, any length |
 | `uart_tx.pio` / `uart_rx.pio` | 6 / 10 | 8N1, receiver locked to every edge, framing errors flagged |
 | `uart_autobaud.pio` | 37 | UART receiver that finds the sender's baud rate by itself |
+| `brs_tx.pio` | 19 | two bit rates in one frame, switched at the sample point (the CAN FD bit-rate switch) |
 | `ws2812.pio` | 6 | WS2812 / NeoPixel LED strips |
 | `onewire.pio` | 21 | 1-Wire master (DS18B20 temperature sensor) |
 | `manchester_tx.pio` / `manchester_rx.pio` | 12 / 12 | Manchester coding; the receiver recovers the clock from the data |
@@ -114,7 +115,7 @@ The judging puts flexibility first, so I tested it the honest way: after the RTL
 
 All of these pass against models in `test/test_more.py`.
 
-Only one protocol idea needed new hardware: a receiver that does not know the baud rate in advance. I added one instruction, `CTL BAUD`, which lets an engine write its own bit timer (period and sample point from X). With it, `uart_autobaud.pio` times the sender's 'U' character with a 2-clock counting loop, divides the count by shifting, writes the bit timer and then receives normally. It receives at 10, 37 and 113 clocks per bit with nothing configured except the pins. The same instruction lets a program change rate in the middle of a frame, which is what CAN FD's data phase does. It cost 0.13% of the area; its timing cost is explained in section 5.
+Only one protocol idea needed new hardware: a receiver that does not know the baud rate in advance. I added one instruction, `CTL BAUD`, which lets an engine write its own bit timer (period and sample point from X). With it, `uart_autobaud.pio` times the sender's 'U' character with a 2-clock counting loop, divides the count by shifting, writes the bit timer and then receives normally. It receives at 10, 37 and 113 clocks per bit with nothing configured except the pins. The same instruction lets a program change rate in the middle of a frame, which is what CAN FD does: `brs_tx.pio` sends 16 bits at the nominal rate, switches at the sample point of the last one (CAN FD's BRS bit), sends 32 bits at the data rate and switches back. The test records the pin on every clock and matches the expected waveform exactly, at 40 -> 10 and 24 -> 4 clocks per bit. This shows the switching mechanism; a full CAN FD node (CRC-17/21, fixed stuff bits, 64-byte frames) would be a longer program. It cost 0.13% of the area; its timing cost is explained in section 5.
 
 The chip can also *recognise* protocols. `edge_capture.pio` timestamps a pin's edges, and the host's classifier names UART (and its baud rate), CAN, NEC IR, DMX512, WS2812, Manchester, SPI/I2C clocks or PWM from the timing alone.
 
@@ -214,7 +215,7 @@ Setup: rover lifted so one wheel spins freely; AK80-8 motor on CAN at 1 Mbit/s (
 
 ## 8. Evaluation
 
-The question was whether one small chip can be programmed for protocols it was not designed for, including my rover bench's three buses at once, and be verified well enough to tape out. I think it was answered: 21 programs run on unchanged hardware (apart from one instruction added for auto-baud), the three bench programs run together in the 64-word memory, and the design passes every Tiny Tapeout check with 7.5 ns of slack at the slow corner. The part not answered yet is the silicon itself, which comes back after the March 2027 shuttle.
+The question was whether one small chip can be programmed for protocols it was not designed for, including my rover bench's three buses at once, and be verified well enough to tape out. I think it was answered: 22 programs run on unchanged hardware (apart from one instruction added for auto-baud), the three bench programs run together in the 64-word memory, and the design passes every Tiny Tapeout check with 7.5 ns of slack at the slow corner. The part not answered yet is the silicon itself, which comes back after the March 2027 shuttle.
 
 | Strength | Effect |
 |---|---|
@@ -231,7 +232,7 @@ The question was whether one small chip can be programmed for protocols it was n
 | 4-word FIFOs, so the host must keep up with fast buses | deeper FIFOs, or DMA on the host side (the LED board's bridge already buffers in its FPGA) | design constraint |
 | The busiest routing layer is about 91-96% full, so small changes can move timing by several ns | leave more area margin, or reduce the program-memory read wiring (three 64-to-1 read ports) | physical |
 | GDS runs take 2-6 hours against a 6-hour CI limit | the faster 25 ns layout routes in about an hour; the pre-layout estimator ranks ideas first | tooling |
-| Classical CAN only; DLC above 8 not handled | CAN FD's rate switch is now possible with `CTL BAUD`, but the longer frames need a program rewrite | scope |
+| Classical CAN only; DLC above 8 not handled | the CAN FD rate switch already works (`brs_tx.pio`); a full FD node needs the longer CRCs and frames in a new program | scope |
 | SPI needs CLKDIV >= 1 (SCK up to clock / 8) because of the input synchronisers | a faster input path for one pin | design constraint |
 | Not yet tested in silicon | the FPGA prototype runs the same RTL; silicon testing after the shuttle | not yet measured |
 

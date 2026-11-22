@@ -51,6 +51,7 @@ The engines know nothing about any protocol. They offer generic pieces (shift re
 | `edge_capture.pio` / `pin_logger.pio` | 6 / 8 | edge timestamps for the protocol detective (`pe.py detect`); pin-change log for `pe.py lockstep` |
 | `servo.pio` | 8 | servo / ESC pulses (the tutorial's example) |
 | `uart_autobaud.pio` | 37 | UART receiver that finds the baud rate itself: the engine times a 'U' and retimes its own bit timer (`CTL BAUD`) |
+| `brs_tx.pio` | 19 | two bit rates in one frame, switched by the engine at the sample point (the CAN FD bit-rate switch) |
 
 The bench's three programs together fill the 64-word program memory exactly, and run at the same time.
 
