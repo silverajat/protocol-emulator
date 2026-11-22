@@ -26,3 +26,5 @@ test/cov/
 formal/*.log
 build/
 hardcaml/_build/
+*_log.csv
+bench_*.csv
