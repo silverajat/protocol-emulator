@@ -17,7 +17,7 @@ Judging weights flexibility (protocols the chip was not designed for) most, then
 ## The demos, in video order
 
 ### 1. Protocol speedrun (opener, 30 s) — built: `pe.py speedrun`
-One chip, the same pins, one program after another, each checked on the spot with nothing but the board's loopback wires and the J3 jumper: UART, CAN (two engines as two nodes), Manchester, SPI (full duplex, MOSI looped to MISO), DMX512 (read back by a UART engine), CRC-32, servo pulses identified by the edge recorder, and the RGB strip. The terminal ends with "8/8 protocols, no hardware changed". Passes 8/8 on the virtual board; WS2812 joins when the strip arrives.
+One chip, the same pins, one program after another, each checked on the spot with nothing but the board's loopback wires and the J3 jumper: UART, CAN (two engines as two nodes), Manchester, SPI (full duplex, MOSI looped to MISO), DMX512 (read back by a UART engine), CRC-32, servo pulses identified by the edge recorder, an auto-baud UART (engine 1 is never told the rate: it measures it and retimes itself with `CTL BAUD`), and the RGB strip. The terminal ends with "9/9 protocols, no hardware changed". Passes 8/8 on the virtual board; WS2812 joins when the strip arrives.
 
 ### 2. The rover drive-train bench (hero, 60 s) — built, needs the parts and J3
 CAN to an AK80-8, INA228 on PDB v1, MCP3208 on the current sense, all on one engine clock: the command frame, the current rising and the bus voltage sagging on one time axis, to the microsecond. The plot no USB-CAN adapter can make.
@@ -46,6 +46,8 @@ The browser playground (`docs/playground.html`) and the 20-minute tutorial: anyo
 - **CAN listen-only sniffing** on the rover's bus, folded into the bench logs.
 
 ## Shot list (all landscape)
+
+The full script with voice-over and timings is [VIDEO.md](VIDEO.md).
 
 1. Board close-up, then the speedrun terminal scrolling green.
 2. Rover lifted, wheel spinning; laptop plot live beside it.

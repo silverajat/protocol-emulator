@@ -349,6 +349,23 @@ def _sr_servo_detect(h):
     return kind == 'PWM', f'servo pulses, identified by the edge recorder: {sentence}'
 
 
+def _sr_autobaud(h):
+    tx, rx = program('uart_tx', 0), program('uart_autobaud', 8)
+    bit = CLK_HZ // 460_800                   # a rate engine 1 is never told
+    h.load(0, EngineConfig(serial=True, out_base=R.uo(2), out_cnt=1, set_base=R.uo(2), set_cnt=1,
+                           out_shr=True, bt_period=bit, bt_point=bit // 2), tx)
+    h.load(1, EngineConfig(serial=True, in_base=R.ui(3), jmp_pin=R.ui(3), in_shr=True, out_shr=True,
+                           resync_pin=R.ui(3), resync_edge=1), rx)
+    h.write(R.CTRL, 0x33)
+    h.send(0, [0xFF, ord('U')])               # 0xFF first: an earlier step may have left the line low
+    for _ in range(20):                       # let the line idle after the 'U' (host reads take time,
+        h.read(R.STATUS)                      # on the board and in the simulation alike)
+    msg = b'hi'
+    h.send(0, list(msg))
+    got = bytes(w & 0xFF for w in _wait_words(h, 1, len(msg)))
+    return got == msg, f'engine 1 measured the rate itself ({CLK_HZ // bit // 1000} kbaud) and read {got!r}'
+
+
 def _sr_rgb(h):
     _rgb_start(h)
     h.write(R.CTRL, 0x22)
@@ -370,6 +387,7 @@ def cmd_speedrun(h, args):
         ('DMX512', lambda: _sr_dmx(h), None),
         ('CRC-32', lambda: _sr_crc(h), None),
         ('Servo + detective', lambda: _sr_servo_detect(h), None),
+        ('Auto-baud UART', lambda: _sr_autobaud(h), None),
         ('RGB PWM', lambda: _sr_rgb(h), None),
     ]
     print('Protocol speedrun: one chip, the same pins, a new program each time\n')
