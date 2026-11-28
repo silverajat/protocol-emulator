@@ -1,42 +1,39 @@
-![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
+# Protocol emulator ASIC
 
-# Tiny Tapeout Verilog Project Template
+A small chip that runs wire protocols as programs, so the same silicon can speak UART, SPI, I2C or CAN. It's my entry for Jane Street's open ASIC competition, built on [Tiny Tapeout](https://tinytapeout.com) (IHP 130 nm).
 
-- [Read the documentation for project](docs/info.md)
+> **Work in progress.** I'm building and testing the design in a private repo, and it goes here with the submission in January 2027. Until then, the files in this repo are still the Tiny Tapeout template.
 
-## What is Tiny Tapeout?
+## The idea
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+Most chips speak one protocol because it's wired into the silicon. This one has a small engine that drives and samples its pins under a program loaded after fabrication. Load a UART program and it acts as a UART; load an I2C program and the same pins speak I2C.
 
-To learn more and get started, visit https://tinytapeout.com.
+```
+     program (loaded after fabrication)
+                  │
+            ┌─────▼──────┐
+ host ◄───► │  control + │──► pin engine ──► UART / SPI / I2C / CAN pins
+            │  program   │◄── (drive, sample, wait, branch)
+            │  memory    │
+            └────────────┘
+```
 
-## Set up your Verilog project
+## How I'm building it
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+1. The engine, its instruction set and an assembler, tested with cocotb against a Python reference model.
+2. UART, SPI, I2C and CAN written as programs for the same hardware, not as separate blocks.
+3. A prototype on the FPGA of [my LED-controller board](https://github.com/silverajat/ledctl), talking to real chips on that board.
+4. Gate-level simulation, the Tiny Tapeout checks, and a write-up of the architecture and how it was verified.
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
+I've taken a block through the Tiny Tapeout flow before: the order-book imbalance unit from my FPGA trading engine, shrunk to 1×2 tiles (about 240 flip-flops) and checked with cocotb against 3,809 values from real market data.
 
-## Enable GitHub actions to build the results page
+## Repo layout (Tiny Tapeout template for now)
 
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
+```
+src/       Verilog (top module tt_um_*)
+test/      cocotb testbench
+docs/      datasheet page (info.md)
+info.yaml  project and pinout description
+```
 
-## Resources
-
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
-
-## What next?
-
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+Rajat Gupta, NUS Electrical Engineering
